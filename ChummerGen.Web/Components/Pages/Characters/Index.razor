@@ -1,0 +1,121 @@
+@page "/characters"
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using ChummerGen.Domain.Chum
+@inject ICharacterStore CharacterStore
+
+<PageTitle>Meine Charaktere</PageTitle>
+
+<section class="character-page">
+    <p class="eyebrow">CHARAKTERVERWALTUNG</p>
+    <h1>Meine Charaktere</h1>
+    <p>Ihre importierten Charaktere sind nur für Ihr Konto sichtbar.</p>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <p role="status" class="import-message">@statusMessage</p>
+    }
+
+    <p><a class="btn btn-primary" href="/characters/import">Charakter importieren</a></p>
+
+    @if (characters.Count == 0)
+    {
+        <p>Noch keine Charaktere importiert.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead>
+                    <tr><th>Name / Alias</th><th>Metatyp</th><th>Version</th><th>Aktualisiert</th><th>Aktionen</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var character in characters)
+                    {
+                        <tr>
+                            <td><a href="/characters/@character.Id">@character.DisplayName</a></td>
+                            <td>@character.Metatype</td>
+                            <td>@character.Version</td>
+                            <td><time datetime="@character.UpdatedAt.ToString("O")">@character.UpdatedAt.ToLocalTime().ToString("g")</time></td>
+                            <td class="character-actions">
+                                <a class="btn btn-sm btn-outline-secondary" href="/characters/@character.Id/download">Herunterladen</a>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => pendingDelete = character">Löschen</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@if (pendingDelete is not null)
+{
+    <section class="delete-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-heading">
+        <h2 id="delete-heading">Charakter löschen?</h2>
+        <p>„@pendingDelete.DisplayName“ wird dauerhaft aus Ihrem Konto entfernt.</p>
+        <button class="btn btn-danger" @onclick="DeleteAsync" disabled="@deleting">Endgültig löschen</button>
+        <button class="btn btn-outline-secondary" @onclick="() => pendingDelete = null" disabled="@deleting">Abbrechen</button>
+    </section>
+}
+
+@code {
+    private List<CharacterRow> characters = [];
+    private CharacterRow? pendingDelete;
+    private string? statusMessage;
+    private bool deleting;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var archives = await CharacterStore.ListAsync(CancellationToken.None);
+        characters = archives.Select(archive =>
+        {
+            try
+            {
+                var document = ChumSerializer.Parse(archive.ChumXml);
+                var label = string.IsNullOrWhiteSpace(document.Alias) ? document.Name : document.Alias;
+                return new CharacterRow(
+                    archive.Id,
+                    string.IsNullOrWhiteSpace(label) ? archive.Name : label,
+                    document.Metatype ?? "—",
+                    document.Version ?? "—",
+                    archive.UpdatedAt);
+            }
+            catch (ChumFormatException)
+            {
+                return new CharacterRow(archive.Id, archive.Name, "—", "—", archive.UpdatedAt);
+            }
+        }).ToList();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (pendingDelete is null || deleting)
+            return;
+
+        deleting = true;
+        try
+        {
+            await CharacterStore.DeleteAsync(pendingDelete.Id, CancellationToken.None);
+            pendingDelete = null;
+            statusMessage = "Der Charakter wurde gelöscht.";
+            await LoadAsync();
+        }
+        catch (KeyNotFoundException)
+        {
+            pendingDelete = null;
+            statusMessage = "Der Charakter wurde nicht gefunden oder gehört nicht zu Ihrem Konto.";
+            await LoadAsync();
+        }
+        finally
+        {
+            deleting = false;
+        }
+    }
+
+    private sealed record CharacterRow(Guid Id, string DisplayName, string Metatype, string Version, DateTimeOffset UpdatedAt);
+}
+

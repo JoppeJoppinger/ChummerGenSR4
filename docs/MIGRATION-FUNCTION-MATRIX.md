@@ -1,0 +1,52 @@
+# Funktionsmatrix: ChummerGenSR4 Web-Migration
+
+Diese Matrix hält den Bestand der WinForms-Anwendung und die Abnahmekriterien für die schrittweise Web-Migration fest. „Offen“ bedeutet, dass die Funktion noch nicht in der Webanwendung umgesetzt oder dort abgenommen ist. Funktionen werden erst dann als migriert markiert, wenn automatisierte Tests und die fachliche Abnahme bestanden sind.
+
+## Nutzung und Charakterverwaltung
+
+| Bereich | Legacy-Bestand | Abnahmekriterium für Web | Priorität | Status |
+|---|---|---|---|---|
+| Start, Navigation, Sprache | MDI-Hauptfenster, Deutsch/Englisch/Französisch/Japanisch (`Program.cs`, `frmMain.cs`, `clsLanguageManager.cs`) | Anmeldung und klare Browser-Navigation; Spracheinstellungen und lokalisierte Inhalte funktionieren konsistent. | P0 | Teilweise: Kontosprache wählbar; verifizierte Chummer-Keys in Shell und Charakter-Tabs, UI-Texte ohne Originalschlüssel bleiben sichtbar offen |
+| Charakter erstellen | Erstellungsmodus, Setting, Metatyp, Attribute und Erschaffungspunkte (`frmCreate.cs`, `clsCharacter.cs`) | Minimalcharakter und repräsentative Archetypen lassen sich regelkonform erstellen; Validierung und Punkte stimmen mit Legacy-Referenzfällen überein. | P0 | Offen |
+| Charakter öffnen, bearbeiten, speichern | `.chum`-XML öffnen/speichern, MRU und Kommandozeilen-Laden (`frmMain.cs`, `frmCreate.cs`, `frmCareer.cs`, `clsCharacter.cs`) | Import-Vorschau, Validierung, privates Speichern, Wiederöffnen und verlustfreier Round-trip repräsentativer Charaktere. | P0 | Teilweise: M4d.1 öffnet private Charaktere revisionsgeprüft und bearbeitet Kernfelder; weitere Fachbearbeitung/Round-trip-Abnahme offen |
+| Konten und Datentrennung | Im Legacy-Programm kein lokales Mehrbenutzer-Webmodell | Registrierung/Anmeldung, Rollen, Admin-Kontosperrung und serverseitige Eigentümerprüfung; fremde Charaktere sind auch mit manipulierten IDs nicht abrufbar oder änderbar. | P0 | Teilweise: Identity, Admin-Setup und Eigentümerfilter; Auth-/Import-/Kontentrennungs-Workflows per Chromium getestet |
+| Karriere, Karma und Ausgaben | Karrierebearbeitung, Karma-/Nuyen-Buchungen, Historie und Fortschritt (`frmCareer.cs`, `frmExpense.cs`, `frmHistory.cs`, `clsExpenses.cs`) | Karriereaktionen aktualisieren Werte und Historie regelkonform und atomar; ungültige Änderungen werden abgelehnt. | P0 | Offen |
+| Fertigkeiten, Attribute, Vor-/Nachteile | Umfangreiche Auswahl- und Bearbeitungsdialoge (`frmSelect*.cs`, `frmCreate.cs`, `frmCareer.cs`, `clsImprovement.cs`) | Regeln, Voraussetzungen, Kosten und abhängige Werte entsprechen Regressionstestfällen. | P0 | Offen |
+| Ausrüstung und Fahrzeuge | Gear, Cyber-/Bioware, Rüstung, Waffen, Fahrzeuge und verschachtelte Modifikationen (`clsEquipment.cs`, zugehörige `frmSelect*.cs`) | Hinzufügen, bearbeiten, verschachteln und entfernen erhält Beziehungen, Kosten und abgeleitete Werte. | P0 | Teilweise: Gear/Cyberware-UI; Legacy-Kosten, Waffenlinks, unterstützte Suiten sowie belegte conditionmonitor-, `<armor><b/i>`-, `<damageresistance>`-, Armor+DamageResistance-, Bone-Density-Augmentation- und isolierte `<matrixinitiativepassadd>`-/`<matrixinitiativepass>`-Boni sowie Einzel-Tags `smartlink`, `movementpercent`, `swimpercent`, `skillwire` (Rating), `lifestylecost`, `conditionmonitor/physical` und einzelne `specificskill`/`skillgroup`/`skillattribute`/`skillcategory`-Boni (ohne `max`) sowie isolierte `specificattribute` (nur `val`, Wert in `aug`), `skillarticulation`, `initiative`, `initiativepass` getestet. Weitere kombinierte/unbekannte Boni, viele Suite-Auswahlen und Fahrzeuge offen |
+| Sondercharaktere und Zusatzwerkzeuge | Kritter, Kontakte, Geister, Pets, Würfelroller/-hilfe, Notizen und Lifestyle (`frmMain.cs`, Controls sowie `frmDice*.cs`, `frmNotes.cs`, `frmLifestyleNuyen.cs`) | Je Teilfunktion definierte Regressionstests; Bedienung und Ergebnis bleiben für Spieler/Spielleiter nutzbar. | P1 | Offen |
+
+## Inhalte, Ein-/Ausgabe und Betrieb
+
+| Bereich | Legacy-Bestand | Abnahmekriterium für Web | Priorität | Status |
+|---|---|---|---|---|
+| Regelkataloge und Custom Content | XML-Kataloge, Overrides, Custom Content und `translate`-Sprachdaten (`bin\data\`, `bin\lang\`, `clsXmlManager.cs`) | `IRuleCatalog` lädt XML sicher und nur lesend, führt Overrides/Custom-Daten deterministisch zusammen, überträgt Sprachübersetzungen und versioniert den Cache per Dateihash; Abdeckung durch reale Katalogtests. | P0 | Teilweise: Regelkatalog und Lokalisierung in Web registriert; reale XML-Tests bestehen. Custom-Override-Parität und vollständige Regelverwendung in UI offen |
+| Sprachen und Einstellungen | XML-Sprachdateien und XML-Einstellungen (`bin\lang\`, `bin\settings\`, `clsOptions.cs`) | Unterstützte Sprachen und relevante Optionen funktionieren; benutzerspezifische Einstellungen bleiben getrennt von globalen Regelkatalogen. | P1 | Teilweise: Sprache je Konto; geprüfte Original-Keys in Navigation und Charakter-Tabs für de/en-us/fr/jp. Fehlende Originalschlüssel und benutzerspezifische Fachoptionen bleiben offen |
+| Import und Dateikompatibilität | `.chum`-XML mit SR4-/Versionsmetadaten (`clsCharacter.cs`) | XML wird sicher geladen, bekannte Kernfelder typisiert bereitgestellt und unbekannter Inhalt verlustfrei erhalten; Uploadvalidierung, Vorschau, private Speicherung und Download sind umgesetzt, Kernfeldbearbeitung/Wiederöffnung in M4d.1 implementiert; weitere Fachbearbeitung folgt. | P0 | Teilweise: M4a/M4b/M4d.1 plus Browser-Import/Wiederöffnen getestet; Referenz-Roundtrip bestanden, weitere Fachbearbeitung und vollständige Altversionen-Abdeckung offen |
+| Export und Charakterblätter | XSLT-Transformation und Vorlagen (`frmExport.cs`, `bin\export\`, `bin\sheets\`) | Ausgewählte Formate erzeugen reproduzierbare Ausgaben; Fehler oder fehlende Vorlagen werden explizit gemeldet. | P1 | Offen |
+| Drucken / Mehrfachdruck | Viewer und WinForms-Druckpfade (`frmViewer.cs`, `frmPrintMultiple.cs`) | Browser-/PDF-Ausgabe deckt vereinbarte Einzel- und Mehrfachdruckfälle ab, einschließlich Sprache und Auswahl der Vorlage. | P1 | Offen |
+| Omae/Übersetzungsdienste | SOAP-Konto-, Upload-, Download-, Kompressions- und Übersetzungsoberflächen (`frmOmae*.cs`, `clsOmaeHelper.cs`) | Schnittstellenverhalten ist dokumentiert und mit Mock-/Vertragstests isoliert; nicht verfügbare Server verursachen keine stillen Datenverluste. | P2 | Offen |
+| Updates und externe Links | Desktop-Updater, Wiki und Issue-Links (`frmUpdate.cs`, `frmMain.cs`) | Webbereitstellung hat einen dokumentierten Aktualisierungspfad; externe Funktionen werden nur übernommen, falls ihr Nutzen im Web erhalten bleibt. | P2 | Offen |
+| Datenintegrität und Sicherung | Dateibasierte Saves im Legacy-Client | SQLite-Transaktionen, Versionskonflikte, Backup und getestete Wiederherstellung schützen private Charaktere. | P0 | Teilweise: Revisionen und Backup-Export getestet; Wiederherstellungsablauf im Betrieb offen |
+| LAN-Betrieb und Sicherheit | Im Legacy-Client keine Webauthentifizierung | Erstadmin-Setup, sichere Konten, HTTPS/vertrauenswürdiger Proxy, Firewall und Betriebs-/Backupanleitung sind abgenommen. | P0 | Offen; keine LAN-Bindung vor Bereitstellungsabnahme |
+
+## Regressionstest-Korpus und Teststufen
+
+Vor einer Aussage zur Funktionsparität sind mindestens folgende Testscheiben zu erstellen:
+
+1. Katalog-Initialisierung mit Basisdaten, Overrides, Custom Content und Übersetzung.
+2. Neue Charaktere für mundane, erwachte, technomancer-, fahrzeuglastige und Critter-Fälle.
+3. `.chum`-Laden/Speichern/Wiederladen mit Vergleich von Identität, Einstellungen, Attributen, Fertigkeiten, Ausrüstung, Verbesserungen, Karrierehistorie, Ausgaben und Notizen.
+4. Vorhandene Beispielcharaktere sowie Metadaten älterer Versionen; Originaldateien nicht verändern.
+5. Karriereaktionen und Ausrüstungskombinationen einschließlich verschachtelter Gegenstände und abgeleiteter Werte.
+6. Export-/Druckvorlagen und Mehrfachdruck gegen festgelegte Ausgabebeispiele.
+7. Kontentrennung, ungültige/zu große Uploads, konkurrierende Änderungen, Datenbankfehler und Wiederherstellung.
+8. Offline-Kernbetrieb sowie separat mock-basierte Verträge für externe SOAP-Dienste.
+
+`frmTest.cs` ist ein interner WinForms-Prüfdialog und ersetzt keine automatisierte Test-Suite. Für die Webmigration werden reproduzierbare automatisierte Tests ohne UI, Netzwerk oder Live-Nutzerdaten benötigt. Beispielcharaktere und Regeldaten sind vor einer Übernahme hinsichtlich Herkunft und Nutzungsrechten zu prüfen.
+
+## Bekannte technische Risiken
+
+- Charakter-/Regellogik greift teilweise auf WinForms, globale Singletons und `Application.StartupPath` zu; sie muss vor Webnutzung schrittweise von UI und Prozesszustand entkoppelt werden.
+- Drucken, Desktop-Dateidialoge, Auto-Update und SOAP-Dienste besitzen nicht automatisch eine gleichwertige Browserfunktion.
+- Die `.chum`-Serialisierung und Kompatibilität müssen über Rundlauf- und Altdatei-Tests abgesichert werden; bloße Dateiendung oder XSD-Datei belegt keine vollständige Laufzeitvalidierung.
+- SQLite ist für die geplante einzelne Heimnetz-Instanz vorgesehen. Mehrinstanzbetrieb oder hohe Schreiblast erfordern eine erneute Datenbankentscheidung.

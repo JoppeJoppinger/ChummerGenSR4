@@ -1,0 +1,353 @@
+@using System.Globalization
+@using ChummerGen.Domain.Character
+@using ChummerGen.Domain.Character.Career
+
+<section class="career-tab">
+    <header class="career-header mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="career-status">
+                <span class="badge @(IsCareer ? "bg-success" : "bg-warning text-dark") fs-6" id="career-mode-badge">
+                    @(IsCareer ? CareerModeLabel : CreateModeLabel)
+                </span>
+                @if (!IsCareer)
+                {
+                    <button type="button" id="btn-switch-career" class="btn btn-sm btn-outline-primary ms-2" @onclick="SwitchToCareer">
+                        In Karrieremodus wechseln
+                    </button>
+                }
+            </div>
+            <div class="d-flex gap-4 text-end">
+                <div class="summary-metric">
+                    <span class="text-muted small d-block">@KarmaLabel</span>
+                    <strong class="fs-5" id="current-karma">@CurrentKarma</strong>
+                    <span class="text-muted small d-block">@KarmaGainedLabel: @CareerKarma</span>
+                </div>
+                <div class="summary-metric">
+                    <span class="text-muted small d-block">@NuyenLabel</span>
+                    <strong class="fs-5" id="current-nuyen">@FormatNuyen(CurrentNuyen)</strong>
+                    <span class="text-muted small d-block">@NuyenGainedLabel: @FormatNuyen(CareerNuyen)</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger py-2 mb-3" role="alert" id="career-error-alert">
+            <span>@errorMessage</span>
+            <button type="button" class="btn-close float-end" aria-label="Schließen" @onclick="() => errorMessage = null"></button>
+        </div>
+    }
+
+    @if (activeAction != TransactionAction.None)
+    {
+        <div class="card p-3 mb-3 border-primary shadow-sm" id="transaction-form-card">
+            <h6 class="mb-3">@ActionTitle</h6>
+            <div class="row g-2 align-items-end">
+                <div class="col-sm-3">
+                    <label class="form-label small mb-1" for="tx-amount">@TransactionAmountLabel</label>
+                    <input id="tx-amount" type="number" min="0" class="form-control form-control-sm" @bind="formAmount" />
+                </div>
+                <div class="col-sm-4">
+                    <label class="form-label small mb-1" for="tx-reason">@ReasonLabel</label>
+                    <input id="tx-reason" type="text" class="form-control form-control-sm" @bind="formReason" />
+                </div>
+                <div class="col-sm-2">
+                    <div class="form-check mt-3">
+                        <input id="tx-refund" type="checkbox" class="form-check-input" @bind="formRefund" />
+                        <label class="form-check-label small" for="tx-refund">@RefundLabel</label>
+                    </div>
+                </div>
+                <div class="col-sm-3 d-flex gap-1">
+                    <button type="button" id="btn-tx-submit" class="btn btn-primary btn-sm flex-grow-1" @onclick="SubmitTransaction">Buchen</button>
+                    <button type="button" id="btn-tx-cancel" class="btn btn-outline-secondary btn-sm" @onclick="CancelTransaction">@CancelLabel</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="row g-3">
+        <!-- Karma Panel -->
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                    <strong class="text-primary">@KarmaLabel</strong>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" id="btn-karma-gained" class="btn btn-outline-success" @onclick="() => OpenForm(TransactionAction.KarmaGained)">
+                            + @KarmaGainedLabel
+                        </button>
+                        <button type="button" id="btn-karma-spent" class="btn btn-outline-danger" @onclick="() => OpenForm(TransactionAction.KarmaSpent)">
+                            - @KarmaSpentLabel
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+                    <table class="table table-sm table-hover table-striped align-middle mb-0" id="table-karma">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th scope="col" style="width: 35%;">@DateLabel</th>
+                                <th scope="col" style="width: 20%;" class="text-end">Betrag</th>
+                                <th scope="col" style="width: 40%;">@ReasonLabel</th>
+                                <th scope="col" style="width: 5%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (KarmaExpenses.Count == 0)
+                            {
+                                <tr><td colspan="4" class="text-muted text-center py-3">Keine Einträge vorhanden</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var entry in KarmaExpenses)
+                                {
+                                    <tr>
+                                        <td class="small">@FormatDate(entry.Date)</td>
+                                        <td class="text-end fw-semibold @(entry.Amount >= 0 ? "text-success" : "text-danger")">
+                                            @(entry.Amount > 0 ? $"+{entry.Amount}" : entry.Amount.ToString())
+                                        </td>
+                                        <td class="small">
+                                            @entry.Reason
+                                            @if (entry.Refund)
+                                            {
+                                                <span class="badge bg-secondary ms-1">Erstattung</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            <button type="button" class="btn btn-sm btn-link text-danger p-0" title="Rückgängig"
+                                                    @onclick="() => Undo(entry.Guid)">✕</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nuyen Panel -->
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                    <strong class="text-success">@NuyenLabel</strong>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" id="btn-nuyen-gained" class="btn btn-outline-success" @onclick="() => OpenForm(TransactionAction.NuyenGained)">
+                            + @NuyenGainedLabel
+                        </button>
+                        <button type="button" id="btn-nuyen-spent" class="btn btn-outline-danger" @onclick="() => OpenForm(TransactionAction.NuyenSpent)">
+                            - @NuyenSpentLabel
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+                    <table class="table table-sm table-hover table-striped align-middle mb-0" id="table-nuyen">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th scope="col" style="width: 35%;">@DateLabel</th>
+                                <th scope="col" style="width: 25%;" class="text-end">Betrag</th>
+                                <th scope="col" style="width: 35%;">@ReasonLabel</th>
+                                <th scope="col" style="width: 5%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (NuyenExpenses.Count == 0)
+                            {
+                                <tr><td colspan="4" class="text-muted text-center py-3">Keine Einträge vorhanden</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var entry in NuyenExpenses)
+                                {
+                                    <tr>
+                                        <td class="small">@FormatDate(entry.Date)</td>
+                                        <td class="text-end fw-semibold @(entry.Amount >= 0 ? "text-success" : "text-danger")">
+                                            @(entry.Amount > 0 ? $"+{FormatNuyen(entry.Amount)}" : FormatNuyen(entry.Amount))
+                                        </td>
+                                        <td class="small">
+                                            @entry.Reason
+                                            @if (entry.Refund)
+                                            {
+                                                <span class="badge bg-secondary ms-1">Erstattung</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            <button type="button" class="btn btn-sm btn-link text-danger p-0" title="Rückgängig"
+                                                    @onclick="() => Undo(entry.Guid)">✕</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+@code {
+    [Inject] private IChummerLocalizationAccessor Localization { get; set; } = default!;
+    [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
+
+    private string KarmaLabel = string.Empty;
+    private string NuyenLabel = string.Empty;
+    private string DateLabel = string.Empty;
+    private string ReasonLabel = string.Empty;
+    private string CancelLabel = string.Empty;
+    private string KarmaGainedLabel = string.Empty;
+    private string KarmaSpentLabel = string.Empty;
+    private string NuyenGainedLabel = string.Empty;
+    private string NuyenSpentLabel = string.Empty;
+    private string CareerModeLabel = string.Empty;
+    private string CreateModeLabel = string.Empty;
+    private string KarmaAmountLabel = string.Empty;
+    private string NuyenAmountLabel = string.Empty;
+    private string RefundLabel = string.Empty;
+
+    private enum TransactionAction
+    {
+        None,
+        KarmaGained,
+        KarmaSpent,
+        NuyenGained,
+        NuyenSpent
+    }
+
+    private TransactionAction activeAction = TransactionAction.None;
+    private int formAmount = 0;
+    private string formReason = string.Empty;
+    private bool formRefund = false;
+    private string? errorMessage = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        KarmaLabel = await Localization.GetRequiredStringAsync("String_Karma");
+        NuyenLabel = await Localization.GetRequiredStringAsync("Label_SummaryNuyen");
+        DateLabel = await Localization.GetRequiredStringAsync("String_Date");
+        ReasonLabel = await Localization.GetRequiredStringAsync("String_Reason");
+        CancelLabel = await Localization.GetRequiredStringAsync("String_Cancel");
+        KarmaGainedLabel = await Localization.GetRequiredStringAsync("Button_KarmaGained");
+        KarmaSpentLabel = await Localization.GetRequiredStringAsync("Button_KarmaSpent");
+        NuyenGainedLabel = await Localization.GetRequiredStringAsync("Button_NuyenGained");
+        NuyenSpentLabel = await Localization.GetRequiredStringAsync("Button_NuyenSpent");
+        CareerModeLabel = await Localization.GetRequiredStringAsync("Title_CareerMode");
+        CreateModeLabel = await Localization.GetRequiredStringAsync("Title_CreateMode");
+        KarmaAmountLabel = await Localization.GetRequiredStringAsync("Label_Expense_KarmaAmount");
+        NuyenAmountLabel = await Localization.GetRequiredStringAsync("Label_Expense_NuyenAmount");
+        RefundLabel = await Localization.GetRequiredStringAsync("String_Expense_Refund");
+    }
+
+    private bool IsCareer => CareerManager.IsCareerMode(Session);
+    private int CurrentKarma => CareerManager.GetKarma(Session);
+    private int CurrentNuyen => CareerManager.GetNuyen(Session);
+    private int CareerKarma => CareerManager.GetCareerKarma(Session);
+    private int CareerNuyen => CareerManager.GetCareerNuyen(Session);
+
+    private IReadOnlyList<ExpenseLogEntry> KarmaExpenses =>
+        CareerManager.GetExpenses(Session, ExpenseType.Karma)
+            .OrderByDescending(e => e.Date)
+            .ToList();
+
+    private IReadOnlyList<ExpenseLogEntry> NuyenExpenses =>
+        CareerManager.GetExpenses(Session, ExpenseType.Nuyen)
+            .OrderByDescending(e => e.Date)
+            .ToList();
+
+    private string ActionTitle => GetActionLabel(activeAction);
+
+    private string TransactionAmountLabel =>
+        activeAction is TransactionAction.KarmaGained or TransactionAction.KarmaSpent
+            ? KarmaAmountLabel
+            : NuyenAmountLabel;
+
+    private string GetActionLabel(TransactionAction action) => action switch
+    {
+        TransactionAction.KarmaGained => KarmaGainedLabel,
+        TransactionAction.KarmaSpent => KarmaSpentLabel,
+        TransactionAction.NuyenGained => NuyenGainedLabel,
+        TransactionAction.NuyenSpent => NuyenSpentLabel,
+        _ => string.Empty
+    };
+
+    private void SwitchToCareer()
+    {
+        errorMessage = null;
+        try
+        {
+            CareerManager.SetCareerMode(Session, true);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void OpenForm(TransactionAction action)
+    {
+        errorMessage = null;
+        activeAction = action;
+        formAmount = 0;
+        formRefund = false;
+        formReason = GetActionLabel(action);
+    }
+
+    private void CancelTransaction()
+    {
+        activeAction = TransactionAction.None;
+        errorMessage = null;
+    }
+
+    private void SubmitTransaction()
+    {
+        errorMessage = null;
+        if (formAmount <= 0)
+        {
+            errorMessage = "Der Betrag muss größer als 0 sein.";
+            return;
+        }
+
+        try
+        {
+            switch (activeAction)
+            {
+                case TransactionAction.KarmaGained:
+                    CareerManager.AddKarmaExpense(Session, formAmount, formReason, DateTime.Now, isSpent: false, refund: formRefund);
+                    break;
+                case TransactionAction.KarmaSpent:
+                    CareerManager.AddKarmaExpense(Session, formAmount, formReason, DateTime.Now, isSpent: true, refund: formRefund);
+                    break;
+                case TransactionAction.NuyenGained:
+                    CareerManager.AddNuyenExpense(Session, formAmount, formReason, DateTime.Now, isSpent: false, refund: formRefund);
+                    break;
+                case TransactionAction.NuyenSpent:
+                    CareerManager.AddNuyenExpense(Session, formAmount, formReason, DateTime.Now, isSpent: true, refund: formRefund);
+                    break;
+            }
+
+            activeAction = TransactionAction.None;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void Undo(Guid id)
+    {
+        errorMessage = null;
+        try
+        {
+            CareerManager.UndoExpense(Session, id);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private static string FormatNuyen(int nuyen) =>
+        string.Format(CultureInfo.InvariantCulture, "{0:N0}¥", nuyen);
+
+    private static string FormatDate(DateTime dt) =>
+        dt == DateTime.MinValue ? "—" : dt.ToString("g", CultureInfo.CurrentCulture);
+}

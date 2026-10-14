@@ -1,0 +1,250 @@
+@using ChummerGen.Domain.Character
+@using ChummerGen.Domain.Character.AttributesSkills
+
+<div class="skills-tab-container" style="display: flex; flex-direction: column; gap: 1.5rem;">
+    <!-- Filter & Übersicht -->
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border: 1px solid #ccc; background: #fafafa; padding: 0.75rem 1rem; border-radius: 4px;">
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <label style="font-weight: bold; font-size: 0.9rem;">@CategoryLabel</label>
+            <select class="form-select form-select-sm" style="width: auto;" @bind="selectedCategory">
+                <option value="">Alle Kategorien</option>
+                @foreach (var cat in categories)
+                {
+                    <option value="@cat">@cat</option>
+                }
+            </select>
+
+            <label style="margin-left: 1rem; font-size: 0.9rem; cursor: pointer;">
+                <input type="checkbox" @bind="showOnlyLearned" />
+                @LearnedSkillsLabel
+            </label>
+        </div>
+
+        <div style="font-size: 0.9rem; background: #eef3fb; padding: 0.4rem 0.8rem; border: 1px solid #ccd7e6; border-radius: 3px;">
+            <span><strong>@ActiveSkillsLabel:</strong> @summary.ActiveSkillsBp @BuildPointsUnit</span>
+            <span style="margin-left: 0.8rem;"><strong>@SkillGroupsLabel:</strong> @summary.SkillGroupsBp @BuildPointsUnit</span>
+            <span style="margin-left: 0.8rem;"><strong>Spezialisierungen:</strong> @summary.SpecializationsBp @BuildPointsUnit</span>
+            <span style="margin-left: 0.8rem; font-weight: bold; color: #005a9e;"><strong>Gesamt:</strong> @summary.TotalBp @BuildPointsUnit</span>
+        </div>
+    </div>
+
+    <!-- Fertigkeitsgruppen (wenn vorhanden) -->
+    @if (skillGroups.Count > 0)
+    {
+        <div class="skillgroups-section" style="border: 1px solid #ccc; background: #fff; padding: 1rem; border-radius: 4px;">
+            <h5 style="margin-top: 0; margin-bottom: 0.75rem; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem;">
+                @SkillGroupsLabel
+            </h5>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem;">
+                @foreach (var group in skillGroups)
+                {
+                    <div style="border: 1px solid #e0e0e0; padding: 0.5rem 0.75rem; border-radius: 4px; background: @(group.Broken ? "#fcfcfc" : "#f7f9fa"); display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-weight: bold; font-size: 0.95rem;">@group.Name</div>
+                            <div style="font-size: 0.8rem; color: @(group.Broken ? "#999" : "#555");">
+                                @(group.Broken ? "Aufgebrochen" : (group.Rating > 0 ? $"{RatingLabel} {group.Rating} ({GroupLabel})" : "Nicht erlernt"))
+                            </div>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 0.3rem;">
+                            @if (!group.Broken)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                        disabled="@(group.Rating <= 0)"
+                                        @onclick="() => IncrementGroupRating(group.Name, -1)">-</button>
+                                <span style="font-weight: bold; width: 24px; text-align: center;">@group.Rating</span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                        disabled="@(group.Rating >= group.RatingMax)"
+                                        @onclick="() => IncrementGroupRating(group.Name, 1)">+</button>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">Getrennt</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Aktive Fertigkeiten Tabelle -->
+    <div class="skills-section" style="border: 1px solid #ccc; background: #fff; padding: 1rem; border-radius: 4px;">
+        <h5 style="margin-top: 0; margin-bottom: 0.75rem; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem;">
+            @ActiveSkillsLabel (@filteredSkills.Count)
+        </h5>
+
+        <table class="table table-sm table-bordered table-hover align-middle" style="font-size: 0.9rem;">
+            <thead style="background: #f0f0f0;">
+                <tr>
+                    <th style="min-width: 160px;">@SkillLabel</th>
+                    <th style="width: 130px;">@GroupLabel</th>
+                    <th style="width: 80px; text-align: center;">@AttributeLabel</th>
+                    <th style="width: 140px; text-align: center;">@RatingLabel</th>
+                    <th style="width: 110px; text-align: center;">@DicePoolLabel</th>
+                    <th style="min-width: 180px;">@SpecializationLabel (+2)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var skill in filteredSkills)
+                {
+                    <tr style="@(skill.Rating > 0 ? "background: #fff;" : "background: #fafafa; color: #666;")">
+                        <td>
+                            <strong>@skill.Name</strong>
+                            @if (!skill.Default && skill.Rating == 0)
+                            {
+                                <span class="badge bg-light text-dark border" style="font-size: 0.7rem; margin-left: 0.3rem;">Kein Ausweichen</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(skill.SkillGroup))
+                            {
+                                <span>@skill.SkillGroup</span>
+                                @if (skill.Grouped)
+                                {
+                                    <span class="badge bg-info text-dark" style="font-size: 0.7rem; margin-left: 0.2rem;">@GroupLabel</span>
+                                }
+                            }
+                            else
+                            {
+                                <span style="color: #aaa;">—</span>
+                            }
+                        </td>
+                        <td style="text-align: center; font-weight: bold;">@skill.Attribute</td>
+                        <td style="text-align: center;">
+                            @if (skill.Grouped)
+                            {
+                                <span style="font-weight: bold; color: #555;">@skill.Rating (@GroupLabel)</span>
+                            }
+                            else
+                            {
+                                <div style="display: inline-flex; align-items: center; gap: 0.3rem;">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                            disabled="@(skill.Rating <= 0)"
+                                            @onclick="() => IncrementSkillRating(skill.Name, -1)">-</button>
+                                    <span style="font-weight: bold; width: 24px; text-align: center;">@skill.Rating</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                            disabled="@(skill.Rating >= skill.RatingMax)"
+                                            @onclick="() => IncrementSkillRating(skill.Name, 1)">+</button>
+                                </div>
+                            }
+                        </td>
+                        <td style="text-align: center; font-weight: bold; font-size: 1rem; color: @(skill.TotalValue > 0 ? "#005a9e" : "#888");">
+                            @(skill.TotalValue > 0 ? skill.TotalValue.ToString() : "—")
+                        </td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm"
+                                   placeholder="Keine Spezialisierung"
+                                   value="@skill.Specialization"
+                                   @onchange="(e) => OnSpecializationChanged(skill.Name, e.Value?.ToString())" />
+                        </td>
+                    </tr>
+                }
+                @if (filteredSkills.Count == 0)
+                {
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 1.5rem; color: #888;">
+                            Keine Fertigkeiten für die aktuellen Filterkriterien gefunden.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Inject] private IChummerLocalizationAccessor Localization { get; set; } = default!;
+    [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
+
+    private string CategoryLabel = string.Empty;
+    private string SkillGroupsLabel = string.Empty;
+    private string SkillLabel = string.Empty;
+    private string GroupLabel = string.Empty;
+    private string AttributeLabel = string.Empty;
+    private string RatingLabel = string.Empty;
+    private string SpecializationLabel = string.Empty;
+    private string ActiveSkillsLabel = string.Empty;
+    private string DicePoolLabel = string.Empty;
+    private string BuildPointsUnit = string.Empty;
+    private string LearnedSkillsLabel = string.Empty;
+
+    private AttributesSkillsManager manager = default!;
+    private IReadOnlyList<SkillModel> skills = [];
+    private IReadOnlyList<SkillGroupModel> skillGroups = [];
+    private SkillsSummary summary = new(0, 0, 0, 0, 0, 0);
+
+    private string selectedCategory = string.Empty;
+    private bool showOnlyLearned = false;
+
+    private List<string> categories = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        CategoryLabel = await Localization.GetRequiredStringAsync("Label_Category");
+        SkillGroupsLabel = await Localization.GetRequiredStringAsync("Label_SkillGroups");
+        SkillLabel = await Localization.GetRequiredStringAsync("String_ExpenseActiveSkill");
+        GroupLabel = await Localization.GetRequiredStringAsync("String_ExpenseSkillGroup");
+        AttributeLabel = await Localization.GetRequiredStringAsync("String_ExpenseAttribute");
+        RatingLabel = await Localization.GetRequiredStringAsync("String_Rating");
+        SpecializationLabel = await Localization.GetRequiredStringAsync("String_ExpenseSpecialization");
+        ActiveSkillsLabel = await Localization.GetRequiredStringAsync("Label_ActiveSkills");
+        DicePoolLabel = await Localization.GetRequiredStringAsync("Label_DicePool");
+        BuildPointsUnit = await Localization.GetRequiredStringAsync("String_BP");
+        LearnedSkillsLabel = await Localization.GetRequiredStringAsync("String_SkillFilterRatingAboveZero");
+    }
+
+    private IReadOnlyList<SkillModel> filteredSkills =>
+        skills
+            .Where(s => string.IsNullOrEmpty(selectedCategory) || string.Equals(s.SkillCategory, selectedCategory, StringComparison.OrdinalIgnoreCase))
+            .Where(s => !showOnlyLearned || s.Rating > 0)
+            .ToList();
+
+    protected override void OnParametersSet()
+    {
+        manager = new AttributesSkillsManager(Session);
+        Reload();
+    }
+
+    private void Reload()
+    {
+        skills = manager.GetSkills(activeOnly: true);
+        skillGroups = manager.GetSkillGroups();
+        summary = manager.CalculateSkillsSummary();
+
+        categories = skills
+            .Select(s => s.SkillCategory)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c)
+            .ToList();
+    }
+
+    private void IncrementSkillRating(string skillName, int delta)
+    {
+        var skill = skills.FirstOrDefault(s => string.Equals(s.Name, skillName, StringComparison.OrdinalIgnoreCase));
+        if (skill is null || skill.Grouped)
+            return;
+
+        int newRating = skill.Rating + delta;
+        manager.UpdateSkillRating(skillName, newRating);
+        Reload();
+    }
+
+    private void IncrementGroupRating(string groupName, int delta)
+    {
+        var group = skillGroups.FirstOrDefault(g => string.Equals(g.Name, groupName, StringComparison.OrdinalIgnoreCase));
+        if (group is null || group.Broken)
+            return;
+
+        int newRating = group.Rating + delta;
+        manager.UpdateSkillGroupRating(groupName, newRating);
+        Reload();
+    }
+
+    private void OnSpecializationChanged(string skillName, string? newSpec)
+    {
+        manager.UpdateSkillSpecialization(skillName, newSpec);
+        Reload();
+    }
+}

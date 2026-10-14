@@ -1,0 +1,451 @@
+@using ChummerGen.Domain.Character
+@using ChummerGen.Domain.Character.Critters
+
+<section class="critters-tab">
+    <div class="critters-header mb-3">
+        <div class="d-flex flex-wrap align-items-center gap-3">
+            <div>
+                <strong>@CharacterTypeLabel</strong>
+                <span class="badge @(Model.IsCritter ? "bg-warning text-dark" : "bg-secondary")">
+                    @(Model.IsCritter ? "Kritter (Sondercharakter)" : "Metamensch")
+                </span>
+            </div>
+            <div>
+                <strong>@CritterPowersLabel</strong>
+                <span class="badge @(Model.CritterEnabled ? "bg-success" : "bg-secondary")">
+                    @(Model.CritterEnabled ? "Aktiviert" : "Nicht aktiv")
+                </span>
+            </div>
+            @if (Model.MutantCritterBaseSkills > 0)
+            {
+                <div>
+                    <strong>Mutanten-Basisfertigkeiten:</strong>
+                    <span class="badge bg-info text-dark">@Model.MutantCritterBaseSkills</span>
+                </div>
+            }
+            <div class="ms-auto d-flex align-items-center gap-2">
+                <label class="form-check-label small" for="chk-is-critter">Kritter-Modus:</label>
+                <input type="checkbox" id="chk-is-critter" class="form-check-input" checked="@Model.IsCritter"
+                       @onchange="ToggleIsCritter" />
+                <label class="form-check-label small ms-2" for="chk-critter-enabled">Kräfte-Tab aktiv:</label>
+                <input type="checkbox" id="chk-critter-enabled" class="form-check-input" checked="@Model.CritterEnabled"
+                       @onchange="ToggleCritterEnabled" />
+            </div>
+        </div>
+    </div>
+
+    @if (!Model.HasCritterData)
+    {
+        <div class="alert alert-secondary p-3">
+            <h4 class="h6 alert-heading">Kein Kritter-Charakter</h4>
+            <p class="mb-2">
+                Für diesen Charakter sind weder der Kritter-Modus (<code>iscritter</code>) noch Kritterkräfte (<code>critter</code>) aktiviert.
+                In Chummer wird die Kritter-Verwaltung nur bei entsprechenden Metatypen oder Vorteilen eingeblendet.
+            </p>
+            <button type="button" class="btn btn-sm btn-primary" @onclick="EnableCritterMode">
+                Kritterkräfte für diesen Charakter aktivieren
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="critter-summary-bar mb-3 p-2 border rounded bg-light text-dark d-flex flex-wrap gap-3">
+            <div><strong>Kräfte gesamt:</strong> @Model.Powers.Count</div>
+            <div><strong>Zählen gegen Limit:</strong> @Model.CountTowardsLimitTotal</div>
+            @if (Model.TotalPowerPoints > 0)
+            {
+                <div>                <strong>@PowerPointsLabel</strong> @Model.TotalPowerPoints</div>
+            }
+            <div class="ms-auto">
+                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="StartAddPower">
+                    + @AddPowerLabel
+                </button>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <!-- Left pane: tree/list -->
+            <div class="col-md-5 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header py-2">
+                        <strong>Kräfte &amp; Schwächen (treCritterPowers)</strong>
+                    </div>
+                    <div class="list-group list-group-flush critter-list-scroll">
+                        <div class="list-group-item bg-light py-1 fw-bold small text-uppercase">
+                            @CritterPowersLabel (@Model.ActivePowers.Count)
+                        </div>
+                        @if (Model.ActivePowers.Count == 0)
+                        {
+                            <div class="list-group-item text-muted small py-2 fst-italic">Keine Kräfte eingetragen</div>
+                        }
+                        @foreach (var power in Model.ActivePowers)
+                        {
+                            <button type="button"
+                                    class="list-group-item list-group-item-action py-2 @(selectedPowerGuid == power.Guid ? "active" : "")"
+                                    @onclick="() => SelectPower(power.Guid)">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span>@power.DisplayName</span>
+                                    @if (!string.IsNullOrWhiteSpace(power.Category))
+                                    {
+                                        <span class="badge @(selectedPowerGuid == power.Guid ? "bg-light text-dark" : "bg-secondary") small">
+                                            @power.Category
+                                        </span>
+                                    }
+                                </div>
+                            </button>
+                        }
+
+                        <div class="list-group-item bg-light py-1 fw-bold small text-uppercase mt-2">
+                            Weaknesses (@Model.Weaknesses.Count)
+                        </div>
+                        @if (Model.Weaknesses.Count == 0)
+                        {
+                            <div class="list-group-item text-muted small py-2 fst-italic">Keine Schwächen eingetragen</div>
+                        }
+                        @foreach (var weakness in Model.Weaknesses)
+                        {
+                            <button type="button"
+                                    class="list-group-item list-group-item-action py-2 @(selectedPowerGuid == weakness.Guid ? "active" : "")"
+                                    @onclick="() => SelectPower(weakness.Guid)">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span>@weakness.DisplayName</span>
+                                    <span class="badge @(selectedPowerGuid == weakness.Guid ? "bg-light text-dark" : "bg-danger") small">
+                                        Schwäche
+                                    </span>
+                                </div>
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right pane: details / editor -->
+            <div class="col-md-7 col-lg-8">
+                @if (showAddForm)
+                {
+                    <div class="card p-3">
+                        <h5 class="card-title mb-3">Neue Kritter-Kraft anlegen</h5>
+                        <div class="row g-2">
+                            <div class="col-md-8">
+                                <label class="form-label small">@NameLabel</label>
+                                <input class="form-control form-control-sm" @bind="newPowerName" placeholder="z. B. Natural Weapon" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">Zusatz / Stufe (Extra)</label>
+                                <input class="form-control form-control-sm" @bind="newPowerExtra" placeholder="z. B. 2 oder Claws/Bite" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small">@CategoryLabel</label>
+                                <select class="form-select form-select-sm" @bind="newPowerCategory">
+                                    <option value="Mundane">Mundane</option>
+                                    <option value="Paranormal">Paranormal</option>
+                                    <option value="Weakness">Weakness (Schwäche)</option>
+                                    <option value="Drake">Drake</option>
+                                    <option value="Spirits">Spirits</option>
+                                    <option value="Technocritters">Technocritters</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small">@TypeLabel</label>
+                                <select class="form-select form-select-sm" @bind="newPowerType">
+                                    <option value="P">P (Physisch)</option>
+                                    <option value="M">M (Mana)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small">@ActionLabel</label>
+                                <select class="form-select form-select-sm" @bind="newPowerAction">
+                                    <option value="Auto">@AutomaticLabel</option>
+                                    <option value="Free">@FreeActionLabel</option>
+                                    <option value="Simple">@SimpleActionLabel</option>
+                                    <option value="Complex">@ComplexActionLabel</option>
+                                    <option value="Special">Special</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">@RangeLabel</label>
+                                <input class="form-control form-control-sm" @bind="newPowerRange" placeholder="Self, Touch, LOS..." />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">@DurationLabel</label>
+                                <input class="form-control form-control-sm" @bind="newPowerDuration" placeholder="Instant, Sustained, Always..." />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">Kraftpunkte</label>
+                                <input type="number" step="0.5" class="form-control form-control-sm" @bind="newPowerPoints" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small">@SourceLabel (Buch)</label>
+                                <input class="form-control form-control-sm" @bind="newPowerSource" placeholder="RW, SR4..." />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small">@PageLabel</label>
+                                <input class="form-control form-control-sm" @bind="newPowerPage" placeholder="z. B. 204" />
+                            </div>
+                            <div class="col-12 mt-2">
+                                <div class="form-check">
+                                    <input type="checkbox" id="new-count-limit" class="form-check-input" @bind="newPowerCountTowardsLimit" />
+                                    <label class="form-check-label small" for="new-count-limit">@CountTowardsLimitLabel</label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small">@NotesLabel</label>
+                                <textarea class="form-control form-control-sm" rows="2" @bind="newPowerNotes"></textarea>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-3">
+                            <button type="button" class="btn btn-sm btn-primary" @onclick="SaveNewPower">Hinzufügen</button>
+                            <button type="button" class="btn btn-sm btn-secondary" @onclick="CancelAdd">@CancelLabel</button>
+                        </div>
+                    </div>
+                }
+                else if (SelectedPower != null)
+                {
+                    <div class="card p-3">
+                        <div class="d-flex justify-content-between align-items-start border-bottom pb-2 mb-3">
+                            <div>
+                                <h4 class="h5 mb-0" id="lblCritterPowerName">@SelectedPower.DisplayName</h4>
+                                <span class="badge bg-secondary" id="lblCritterPowerCategory">@SelectedPower.Category</span>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="cmdDeleteCritterPower" @onclick="() => DeletePower(SelectedPower.Guid)">
+                                @DeleteLabel
+                            </button>
+                        </div>
+
+                        <dl class="row mb-3 small">
+                            <dt class="col-sm-4 text-muted" id="lblCritterPowerTypeLabel">@TypeLabel</dt>
+                            <dd class="col-sm-8" id="lblCritterPowerType">@(SelectedPower.Type == "P" ? "Physisch (P)" : SelectedPower.Type == "M" ? "Mana (M)" : SelectedPower.Type)</dd>
+
+                            <dt class="col-sm-4 text-muted" id="lblCritterPowerActionLabel">@ActionLabel</dt>
+                            <dd class="col-sm-8" id="lblCritterPowerAction">@SelectedPower.Action</dd>
+
+                            <dt class="col-sm-4 text-muted" id="lblCritterPowerRangeLabel">@RangeLabel</dt>
+                            <dd class="col-sm-8" id="lblCritterPowerRange">@SelectedPower.Range</dd>
+
+                            <dt class="col-sm-4 text-muted" id="lblCritterPowerDurationLabel">@DurationLabel</dt>
+                            <dd class="col-sm-8" id="lblCritterPowerDuration">@SelectedPower.Duration</dd>
+
+                            <dt class="col-sm-4 text-muted" id="lblCritterPowerSourceLabel">@SourceLabel</dt>
+                            <dd class="col-sm-8" id="lblCritterPowerSource">@($"{SelectedPower.Source} {SelectedPower.Page}".Trim())</dd>
+
+                            @if (SelectedPower.Points > 0)
+                            {
+                                <dt class="col-sm-4 text-muted" id="lblCritterPowerPointCostLabel">@PowerPointsLabel.TrimEnd(':')</dt>
+                                <dd class="col-sm-8" id="lblCritterPowerPointCost">@SelectedPower.Points</dd>
+                            }
+                        </dl>
+
+                        <div class="form-check mb-3">
+                            <input type="checkbox"
+                                   class="form-check-input"
+                                   id="chkCritterPowerCount"
+                                   checked="@SelectedPower.CountTowardsLimit"
+                                   @onchange="ToggleCountTowardsLimit" />
+                            <label class="form-check-label small" for="chkCritterPowerCount">@CountTowardsLimitLabel</label>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold" for="critter-notes">@NotesLabel</label>
+                            <textarea id="critter-notes"
+                                      class="form-control form-control-sm"
+                                      rows="3"
+                                      value="@SelectedPower.Notes"
+                                      @onchange="UpdateNotes"></textarea>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="card p-4 text-center text-muted">
+                        <p class="mb-0">Wähle eine Kraft aus der linken Liste oder klicke auf „+ Kraft hinzufügen“.</p>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+<style>
+    .critter-list-scroll {
+        max-height: 480px;
+        overflow-y: auto;
+    }
+</style>
+
+@code {
+    [Inject] private IChummerLocalizationAccessor Localization { get; set; } = default!;
+    [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
+
+    private string CharacterTypeLabel = string.Empty;
+    private string CritterPowersLabel = string.Empty;
+    private string PowerPointsLabel = string.Empty;
+    private string AddPowerLabel = string.Empty;
+    private string NameLabel = string.Empty;
+    private string CategoryLabel = string.Empty;
+    private string AutomaticLabel = string.Empty;
+    private string SourceLabel = string.Empty;
+    private string PageLabel = string.Empty;
+    private string NotesLabel = string.Empty;
+    private string CancelLabel = string.Empty;
+    private string DeleteLabel = string.Empty;
+    private string RangeLabel = string.Empty;
+    private string TypeLabel = string.Empty;
+    private string ActionLabel = string.Empty;
+    private string DurationLabel = string.Empty;
+    private string CountTowardsLimitLabel = string.Empty;
+    private string FreeActionLabel = string.Empty;
+    private string SimpleActionLabel = string.Empty;
+    private string ComplexActionLabel = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        CharacterTypeLabel = await Localization.GetRequiredStringAsync("Label_OmaeUpload_CharacterType");
+        CritterPowersLabel = await Localization.GetRequiredStringAsync("Tab_Critter");
+        PowerPointsLabel = await Localization.GetRequiredStringAsync("Label_PowerPoints");
+        AddPowerLabel = await Localization.GetRequiredStringAsync("Button_AddCritterPower");
+        NameLabel = (await Localization.GetRequiredStringAsync("Label_Name")).TrimEnd(':');
+        CategoryLabel = (await Localization.GetRequiredStringAsync("Label_Category")).TrimEnd(':');
+        AutomaticLabel = await Localization.GetRequiredStringAsync("String_ActionAutomatic");
+        SourceLabel = (await Localization.GetRequiredStringAsync("Label_Source")).TrimEnd(':');
+        PageLabel = await Localization.GetRequiredStringAsync("String_Page");
+        NotesLabel = await Localization.GetRequiredStringAsync("Tab_Notes");
+        CancelLabel = await Localization.GetRequiredStringAsync("String_Cancel");
+        DeleteLabel = await Localization.GetRequiredStringAsync("String_Delete");
+        RangeLabel = await Localization.GetRequiredStringAsync("Label_RangeHeading");
+        TypeLabel = (await Localization.GetRequiredStringAsync("Label_Type")).TrimEnd(':');
+        ActionLabel = (await Localization.GetRequiredStringAsync("Label_Action")).TrimEnd(':');
+        DurationLabel = (await Localization.GetRequiredStringAsync("Label_Duration")).TrimEnd(':');
+        CountTowardsLimitLabel = await Localization.GetRequiredStringAsync("Checkbox_CritterPowerCount");
+        FreeActionLabel = await Localization.GetRequiredStringAsync("String_ActionFree");
+        SimpleActionLabel = await Localization.GetRequiredStringAsync("String_ActionSimple");
+        ComplexActionLabel = await Localization.GetRequiredStringAsync("String_ActionComplex");
+    }
+
+    private CritterCharacterModel Model => _model ??= new CritterCharacterModel(Session);
+    private CritterCharacterModel? _model;
+
+    private string? selectedPowerGuid;
+    private bool showAddForm;
+
+    private string newPowerName = "";
+    private string newPowerExtra = "";
+    private string newPowerCategory = "Mundane";
+    private string newPowerType = "P";
+    private string newPowerAction = "Auto";
+    private string newPowerRange = "Self";
+    private string newPowerDuration = "Always";
+    private string newPowerSource = "RW";
+    private string newPowerPage = "";
+    private double newPowerPoints = 0;
+    private bool newPowerCountTowardsLimit = true;
+    private string newPowerNotes = "";
+
+    protected override void OnParametersSet()
+    {
+        _model = new CritterCharacterModel(Session);
+        if (selectedPowerGuid == null || Model.FindPower(selectedPowerGuid) == null)
+        {
+            selectedPowerGuid = Model.Powers.FirstOrDefault()?.Guid;
+        }
+    }
+
+    private CritterPower? SelectedPower => Model.FindPower(selectedPowerGuid);
+
+    private void SelectPower(string guid)
+    {
+        selectedPowerGuid = guid;
+        showAddForm = false;
+    }
+
+    private void ToggleIsCritter(ChangeEventArgs e)
+    {
+        if (e.Value is bool b)
+        {
+            Model.IsCritter = b;
+            if (b && !Model.CritterEnabled)
+                Model.CritterEnabled = true;
+        }
+    }
+
+    private void ToggleCritterEnabled(ChangeEventArgs e)
+    {
+        if (e.Value is bool b)
+        {
+            Model.CritterEnabled = b;
+        }
+    }
+
+    private void EnableCritterMode()
+    {
+        Model.CritterEnabled = true;
+        Model.EnsureCritterContainer();
+    }
+
+    private void ToggleCountTowardsLimit(ChangeEventArgs e)
+    {
+        if (SelectedPower != null && e.Value is bool b)
+        {
+            SelectedPower.CountTowardsLimit = b;
+        }
+    }
+
+    private void UpdateNotes(ChangeEventArgs e)
+    {
+        if (SelectedPower != null && e.Value is string s)
+        {
+            SelectedPower.Notes = s;
+        }
+    }
+
+    private void StartAddPower()
+    {
+        showAddForm = true;
+        newPowerName = "";
+        newPowerExtra = "";
+        newPowerCategory = "Mundane";
+        newPowerType = "P";
+        newPowerAction = "Auto";
+        newPowerRange = "Self";
+        newPowerDuration = "Always";
+        newPowerSource = "RW";
+        newPowerPage = "";
+        newPowerPoints = 0;
+        newPowerCountTowardsLimit = true;
+        newPowerNotes = "";
+    }
+
+    private void CancelAdd()
+    {
+        showAddForm = false;
+    }
+
+    private void SaveNewPower()
+    {
+        if (string.IsNullOrWhiteSpace(newPowerName))
+            return;
+
+        var power = CritterPower.Create(
+            name: newPowerName.Trim(),
+            category: newPowerCategory,
+            type: newPowerType,
+            action: newPowerAction,
+            range: newPowerRange,
+            duration: newPowerDuration,
+            source: newPowerSource,
+            page: newPowerPage,
+            extra: newPowerExtra.Trim(),
+            points: newPowerPoints,
+            countTowardsLimit: newPowerCountTowardsLimit,
+            notes: newPowerNotes);
+
+        Model.AddPower(power);
+        selectedPowerGuid = power.Guid;
+        showAddForm = false;
+    }
+
+    private void DeletePower(string guid)
+    {
+        Model.RemovePower(guid);
+        selectedPowerGuid = Model.Powers.FirstOrDefault()?.Guid;
+    }
+}

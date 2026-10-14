@@ -1,0 +1,50 @@
+<section class="character-info">
+    <div class="character-fields">
+        <label for="character-name">@NameLabel</label>
+        <input id="character-name" class="form-control" @bind="Session.Model.Name" />
+        <label for="character-alias">@AliasLabel</label>
+        <input id="character-alias" class="form-control" @bind="Session.Model.Alias" />
+        <label for="character-metatype">@MetatypeLabel</label>
+        <input id="character-metatype" class="form-control" @bind="Session.Model.Metatype" />
+        <label>@SexLabel</label><output>@Display(Session.Model.GetValue("sex"))</output>
+        <label>@AgeLabel</label><output>@Display(Session.Model.GetValue("age"))</output>
+    </div>
+    <h3>@OtherInfoLabel</h3>
+    <dl class="character-summary">
+        <dt>@KarmaLabel</dt><dd>@Display(Session.Model.Karma)</dd>
+        <dt>@NuyenLabel</dt><dd>@Display(Session.Model.Nuyen)</dd>
+        <dt>@BuildPointsLabel</dt><dd>@Display(Session.Model.BuildPoints)</dd>
+        <dt>Version</dt><dd>@Display(Session.Model.Version)</dd>
+    </dl>
+</section>
+
+@code {
+    [Inject] private IChummerLocalizationAccessor Localization { get; set; } = default!;
+    [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
+
+    private string NameLabel = string.Empty;
+    private string AliasLabel = string.Empty;
+    private string MetatypeLabel = string.Empty;
+    private string SexLabel = string.Empty;
+    private string AgeLabel = string.Empty;
+    private string OtherInfoLabel = string.Empty;
+    private string KarmaLabel = string.Empty;
+    private string NuyenLabel = string.Empty;
+    private string BuildPointsLabel = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        NameLabel = await Localization.GetRequiredStringAsync("Label_Name");
+        AliasLabel = await Localization.GetRequiredStringAsync("Label_Alias");
+        MetatypeLabel = await Localization.GetRequiredStringAsync("Label_SummaryMetatype");
+        SexLabel = await Localization.GetRequiredStringAsync("Label_Sex");
+        AgeLabel = await Localization.GetRequiredStringAsync("Label_Age");
+        OtherInfoLabel = await Localization.GetRequiredStringAsync("Tab_OtherInfo");
+        KarmaLabel = await Localization.GetRequiredStringAsync("String_Karma");
+        NuyenLabel = await Localization.GetRequiredStringAsync("Label_SummaryNuyen");
+        BuildPointsLabel = await Localization.GetRequiredStringAsync("String_BP");
+    }
+
+    private static string Display(object? value) =>
+        value is null || string.IsNullOrWhiteSpace(value.ToString()) ? "—" : value.ToString()!;
+}

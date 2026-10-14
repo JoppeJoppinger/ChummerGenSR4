@@ -1,0 +1,256 @@
+﻿@using System.Globalization
+@using ChummerGen.Domain.Character
+@using ChummerGen.Domain.Character.Gear
+
+<div class="gear-container">
+    <div class="gear-summary-bar">
+        <span>Gesamtkosten Ausrüstung: <strong>@TotalGearCost.ToString("N0", CultureInfo.InvariantCulture) ¥</strong></span>
+        <span>Gegenstände: <strong>@Items.Count</strong></span>
+    </div>
+
+    @if (Items.Count == 0)
+    {
+        <p class="text-muted">Keine Ausrüstung vorhanden.</p>
+    }
+    else
+    {
+        <div class="gear-layout">
+            <div class="gear-list-pane">
+                <table class="table table-sm table-hover gear-table">
+                    <thead>
+                        <tr>
+                            <th>@NameLabel</th>
+                            <th>@CategoryLabel</th>
+                            <th class="text-end">@RatingLabel</th>
+                            <th class="text-end">@AmountLabel</th>
+                            <th class="text-end">@AvailabilityLabel</th>
+                            <th class="text-end">@CostLabel</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Items)
+                        {
+                            <tr class="@(selectedItem == item ? "table-active" : null)"
+                                @onclick="() => SelectItem(item)"
+                                style="cursor: pointer;">
+                                <td>
+                                    <strong>@item.DisplayNameShort</strong>
+                                    @if (!string.IsNullOrWhiteSpace(item.GearName))
+                                    {
+                                        <span class="text-muted">("@item.GearName")</span>
+                                    }
+                                </td>
+                                <td>@item.Category</td>
+                                <td class="text-end">@(item.Rating > 0 ? item.Rating.ToString() : "—")</td>
+                                <td class="text-end">@item.Quantity</td>
+                                <td class="text-end">@item.TotalAvail</td>
+                                <td class="text-end">@item.TotalCost.ToString("N0", CultureInfo.InvariantCulture) ¥</td>
+                            </tr>
+                            @foreach (var child in item.Children)
+                            {
+                                <tr class="@(selectedItem == child ? "table-active" : null)"
+                                    @onclick="() => SelectItem(child)"
+                                    style="cursor: pointer;">
+                                    <td style="padding-left: 1.5rem;">
+                                        ↳ @child.DisplayNameShort
+                                        @if (!string.IsNullOrWhiteSpace(child.GearName))
+                                        {
+                                            <span class="text-muted">("@child.GearName")</span>
+                                        }
+                                    </td>
+                                    <td>@child.Category</td>
+                                    <td class="text-end">@(child.Rating > 0 ? child.Rating.ToString() : "—")</td>
+                                    <td class="text-end">@child.Quantity</td>
+                                    <td class="text-end">@child.TotalAvail</td>
+                                    <td class="text-end">@child.TotalCost.ToString("N0", CultureInfo.InvariantCulture) ¥</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="gear-detail-pane">
+                @if (selectedItem is not null)
+                {
+                    <h4>Details: @selectedItem.DisplayNameShort</h4>
+                    <div class="gear-edit-fields">
+                        <label>@NameLabel</label>
+                        <input class="form-control form-control-sm" @bind="selectedItem.Name" />
+
+                        <label>@CategoryLabel</label>
+                        <input class="form-control form-control-sm" @bind="selectedItem.Category" />
+
+                        <label>@AmountLabel</label>
+                        <input type="number" min="1" class="form-control form-control-sm" @bind="selectedItem.Quantity" />
+
+                        @if (selectedItem.MaxRating > 0)
+                        {
+                            <label>@RatingLabel (@selectedItem.MinRating – @selectedItem.MaxRating)</label>
+                            <input type="number" min="@selectedItem.MinRating" max="@selectedItem.MaxRating" class="form-control form-control-sm" @bind="selectedItem.Rating" />
+                        }
+
+                        <label>@CostLabel</label>
+                        <input class="form-control form-control-sm" @bind="selectedItem.CostExpression" />
+
+                        <label>@AvailabilityLabel</label>
+                        <input class="form-control form-control-sm" @bind="selectedItem.AvailExpression" />
+
+                        <label>Ort / Verwahrung</label>
+                        <input class="form-control form-control-sm" @bind="selectedItem.Location" />
+
+                        <label>@EquippedLabel</label>
+                        <div>
+                            <input type="checkbox" id="chk-equipped" @bind="selectedItem.Equipped" />
+                            <label for="chk-equipped" style="display:inline; font-weight:normal;">@EquippedYesLabel</label>
+                        </div>
+
+                        <label>@BlackMarketDiscountLabel</label>
+                        <div>
+                            <input type="checkbox" id="chk-discount" @bind="selectedItem.DiscountCost" />
+                            <label for="chk-discount" style="display:inline; font-weight:normal;">@ActiveLabel</label>
+                        </div>
+
+                        <label>@NotesLabel</label>
+                        <textarea class="form-control form-control-sm" rows="3" @bind="selectedItem.Notes"></textarea>
+                    </div>
+
+                    <div class="gear-meta mt-3">
+                        <dl class="row mb-0">
+                            <dt class="col-sm-5">@CostLabel</dt>
+                            <dd class="col-sm-7">@selectedItem.TotalCost.ToString("N0", CultureInfo.InvariantCulture) ¥</dd>
+                            <dt class="col-sm-5">@AvailabilityLabel</dt>
+                            <dd class="col-sm-7">@selectedItem.TotalAvail</dd>
+                            @if (!string.IsNullOrWhiteSpace(selectedItem.CapacityExpression))
+                            {
+                                <dt class="col-sm-5">@CapacityLabel</dt>
+                                <dd class="col-sm-7">@selectedItem.CapacityExpression (Frei: @selectedItem.CapacityRemaining)</dd>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(selectedItem.Source))
+                            {
+                                <dt class="col-sm-5">@SourceLabel</dt>
+                                <dd class="col-sm-7">@selectedItem.Source @selectedItem.Page</dd>
+                            }
+                        </dl>
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted">Wählen Sie einen Gegenstand zur Ansicht und Bearbeitung aus.</p>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .gear-container {
+        font-family: var(--font-ui, "Segoe UI", Tahoma, Arial, sans-serif);
+        font-size: 13px;
+    }
+    .gear-summary-bar {
+        display: flex;
+        gap: 2rem;
+        padding: 0.4rem 0.6rem;
+        background: #f0f0f0;
+        border: 1px solid #ccc;
+        margin-bottom: 0.75rem;
+    }
+    .gear-layout {
+        display: grid;
+        grid-template-columns: 1fr 340px;
+        gap: 1rem;
+        align-items: start;
+    }
+    .gear-list-pane {
+        overflow-x: auto;
+        border: 1px solid #ccc;
+        background: #fff;
+    }
+    .gear-table {
+        margin-bottom: 0;
+        font-size: 12px;
+    }
+    .gear-table th {
+        background: #f5f5f5;
+        border-bottom: 2px solid #ddd;
+        padding: 4px 6px;
+    }
+    .gear-table td {
+        padding: 4px 6px;
+        vertical-align: middle;
+    }
+    .gear-detail-pane {
+        border: 1px solid #ccc;
+        background: #fafafa;
+        padding: 0.75rem;
+    }
+    .gear-detail-pane h4 {
+        font-size: 14px;
+        font-weight: 600;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 0.25rem;
+    }
+    .gear-edit-fields {
+        display: grid;
+        grid-template-columns: 110px 1fr;
+        gap: 0.35rem 0.5rem;
+        align-items: center;
+        font-size: 12px;
+    }
+    .gear-edit-fields label {
+        font-weight: 500;
+        margin-bottom: 0;
+    }
+    .gear-meta {
+        font-size: 11px;
+        border-top: 1px solid #ddd;
+        padding-top: 0.5rem;
+    }
+</style>
+
+@code {
+    [Inject] private IChummerLocalizationAccessor Localization { get; set; } = default!;
+    [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
+
+    private string NameLabel = string.Empty;
+    private string CategoryLabel = string.Empty;
+    private string RatingLabel = string.Empty;
+    private string AmountLabel = string.Empty;
+    private string AvailabilityLabel = string.Empty;
+    private string CostLabel = string.Empty;
+    private string EquippedLabel = string.Empty;
+    private string EquippedYesLabel = string.Empty;
+    private string BlackMarketDiscountLabel = string.Empty;
+    private string ActiveLabel = string.Empty;
+    private string NotesLabel = string.Empty;
+    private string CapacityLabel = string.Empty;
+    private string SourceLabel = string.Empty;
+
+    private GearItem? selectedItem;
+
+    protected override async Task OnInitializedAsync()
+    {
+        NameLabel = (await Localization.GetRequiredStringAsync("Label_Name")).TrimEnd(':');
+        CategoryLabel = (await Localization.GetRequiredStringAsync("Label_Category")).TrimEnd(':');
+        RatingLabel = (await Localization.GetRequiredStringAsync("Label_GearRating")).TrimEnd(':');
+        AmountLabel = (await Localization.GetRequiredStringAsync("Label_GearQty")).TrimEnd(':');
+        AvailabilityLabel = await Localization.GetRequiredStringAsync("Label_Avail");
+        CostLabel = (await Localization.GetRequiredStringAsync("Label_Cost")).TrimEnd(':');
+        EquippedLabel = await Localization.GetRequiredStringAsync("Checkbox_Equipped");
+        EquippedYesLabel = "Ja";
+        BlackMarketDiscountLabel = await Localization.GetRequiredStringAsync("Checkbox_BlackMarketDiscount");
+        ActiveLabel = await Localization.GetRequiredStringAsync("String_DescActive");
+        NotesLabel = (await Localization.GetRequiredStringAsync("Tab_Notes")).TrimEnd(':');
+        CapacityLabel = await Localization.GetRequiredStringAsync("Label_Capacity");
+        SourceLabel = await Localization.GetRequiredStringAsync("Label_Source");
+    }
+
+    private IReadOnlyList<GearItem> Items => GearModule.GetGearItems(Session);
+
+    private int TotalGearCost => GearModule.CalculateTotalGearCost(Session);
+
+    private void SelectItem(GearItem item) => selectedItem = item;
+}

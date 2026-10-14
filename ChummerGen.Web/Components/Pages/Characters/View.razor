@@ -1,0 +1,147 @@
+@page "/characters/{Id:guid}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using ChummerGen.Domain.Chum
+@using ChummerGen.Domain.Models
+@inject ICharacterStore CharacterStore
+@inject NavigationManager Navigation
+
+<PageTitle>@(session?.Model.Name ?? "Charakter")</PageTitle>
+
+<section class="character-editor">
+    @if (loading)
+    {
+        <p>Charakter wird geladen …</p>
+    }
+    else if (loadError is not null)
+    {
+        <h1>Charakter nicht verfügbar</h1>
+        <p>@loadError</p>
+        <a class="btn btn-outline-secondary" href="/characters">Zur Charakterliste</a>
+    }
+    else if (archive is null || session is null)
+    {
+        <h1>Nicht gefunden</h1>
+        <p>Der Charakter wurde nicht gefunden.</p>
+        <a class="btn btn-outline-secondary" href="/characters">Zur Charakterliste</a>
+    }
+    else
+    {
+        <header class="character-editor-header">
+            <div>
+                <p class="eyebrow">CHARAKTER</p>
+                <h1>@DisplayName</h1>
+            </div>
+            <div class="character-editor-actions">
+                <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@saving">
+                    @(saving ? "Wird gespeichert …" : "Speichern")
+                </button>
+                <a class="btn btn-outline-secondary" href="/characters">Zurück</a>
+            </div>
+        </header>
+
+        @if (IsDirty)
+        {
+            <p class="character-unsaved" role="status">Ungespeicherte Änderungen</p>
+        }
+        @if (!string.IsNullOrWhiteSpace(statusMessage))
+        {
+            <p class="character-status @(saveFailed ? "error" : "success")" role="status">@statusMessage</p>
+        }
+        @if (saveFailed)
+        {
+            <button type="button" class="btn btn-outline-secondary" @onclick="Reload">Neu laden</button>
+        }
+
+        <CharacterTabs @key="Id">
+            <Info><InfoTab Session="session" /></Info>
+            <Attributes><AttributesTab Session="session" /></Attributes>
+            <Skills><SkillsTab Session="session" /></Skills>
+            <Gear><GearTab Session="session" /></Gear>
+            <Cyberware><CyberwareTab Session="session" /></Cyberware>
+            <Qualities><QualitiesTab Session="session" /></Qualities>
+            <Career><CareerTab Session="session" /></Career>
+            <Critters><CrittersTab Session="session" /></Critters>
+            <Export><ExportTab Session="session" /></Export>
+        </CharacterTabs>
+    }
+</section>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private CharacterArchive? archive;
+    private CharacterSession? session;
+    private bool loading = true;
+    private bool saving;
+    private bool saveFailed;
+    private string? statusMessage;
+    private string? loadError;
+
+    private string DisplayName => string.IsNullOrWhiteSpace(session?.Model.Alias)
+        ? session?.Model.Name ?? "Unbenannt"
+        : $"{session.Model.Name} ({session.Model.Alias})";
+    private bool IsDirty => archive is not null && session is not null && session.Serialize() != archive.ChumXml;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        archive = null;
+        session = null;
+        statusMessage = null;
+        saveFailed = false;
+        loadError = null;
+        try
+        {
+            archive = await CharacterStore.GetAsync(Id, CancellationToken.None);
+            if (archive is not null)
+                session = new CharacterSession(ChumSerializer.Parse(archive.ChumXml));
+        }
+        catch (ChumFormatException)
+        {
+            loadError = "Die Charakterdaten konnten nicht geöffnet werden.";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (archive is null || session is null || saving)
+            return;
+
+        saving = true;
+        statusMessage = null;
+        saveFailed = false;
+        try
+        {
+            var xml = session.Serialize();
+            archive = await CharacterStore.SaveAsync(
+                archive with { Name = session.Model.Name ?? string.Empty, ChumXml = xml },
+                CancellationToken.None);
+            statusMessage = "Änderungen wurden gespeichert.";
+        }
+        catch (CharacterConcurrencyException)
+        {
+            saveFailed = true;
+            statusMessage = "Der Charakter wurde zwischenzeitlich geändert. Speichern Sie Ihre Änderungen nicht erneut, sondern wählen Sie „Neu laden“, um die aktuelle Version zu öffnen.";
+        }
+        catch (KeyNotFoundException)
+        {
+            archive = null;
+            session = null;
+            statusMessage = "Der Charakter wurde nicht gefunden.";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private void Reload() => Navigation.NavigateTo($"/characters/{Id}", forceLoad: true);
+}

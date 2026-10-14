@@ -1,0 +1,231 @@
+@using ChummerGen.Domain.Character
+@using ChummerGen.Domain.Character.AttributesSkills
+
+<div class="attributes-tab-container" style="display: flex; flex-direction: column; gap: 1.5rem;">
+    <!-- Attribute Grid -->
+    <div class="attributes-section" style="border: 1px solid #ccc; background: #fff; padding: 1rem; border-radius: 4px;">
+        <h4 style="margin-top: 0; margin-bottom: 1rem; border-bottom: 2px solid #005a9e; padding-bottom: 0.3rem;">
+            @PrimaryAttributesLabel & @SpecialAttributesLabel
+        </h4>
+
+        <table class="table table-sm table-bordered table-hover align-middle" style="font-size: 0.9rem; max-width: 900px;">
+            <thead style="background: #f0f0f0;">
+                <tr>
+                    <th style="width: 160px;">@AttributeLabel</th>
+                    <th style="width: 140px; text-align: center;">@BaseLabel</th>
+                    <th style="width: 100px; text-align: center;">@MetatypeLimitsLabel</th>
+                    <th style="width: 100px; text-align: center;">@AugmentedLabel</th>
+                    <th style="width: 90px; text-align: center;">Aug. Mod</th>
+                    <th style="width: 90px; text-align: center;">Gesamtwert</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var attr in attributes)
+                {
+                    <tr style="@(attr.IsNaturalMax ? "background: #fff8e7;" : "")">
+                        <td>
+                            <strong>@attr.Name</strong>
+                            <span style="color: #666; font-size: 0.8rem; margin-left: 0.3rem;">@GetAttributeLabel(attr.Name)</span>
+                        </td>
+                        <td style="text-align: center;">
+                            <div style="display: inline-flex; align-items: center; gap: 0.3rem;">
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                        disabled="@(attr.BaseValue <= attr.MetatypeMin)"
+                                        @onclick="() => IncrementAttribute(attr.Name, -1)">-</button>
+                                <span style="font-weight: bold; width: 32px; display: inline-block;">@attr.BaseValue</span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                        disabled="@(attr.MetatypeMax > 0 && attr.BaseValue >= attr.MetatypeMax)"
+                                        @onclick="() => IncrementAttribute(attr.Name, 1)">+</button>
+                            </div>
+                        </td>
+                        <td style="text-align: center;">@attr.MetatypeMin / @(attr.MetatypeMax > 0 ? attr.MetatypeMax.ToString() : "—")</td>
+                        <td style="text-align: center;">@(attr.MetatypeAugMax > 0 ? attr.MetatypeAugMax.ToString() : "—")</td>
+                        <td style="text-align: center; color: @(attr.AugModifier > 0 ? "#008000" : (attr.AugModifier < 0 ? "#cc0000" : "inherit"));">
+                            @(attr.AugModifier > 0 ? $"+{attr.AugModifier}" : attr.AugModifier.ToString())
+                        </td>
+                        <td style="text-align: center; font-weight: bold; font-size: 1rem;">@attr.TotalValue</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <!-- Zusammenfassung BP -->
+        <div class="attributes-summary-box" style="margin-top: 1rem; padding: 0.8rem; background: #eef3fb; border: 1px solid #ccd7e6; border-radius: 4px; max-width: 900px; font-size: 0.9rem;">
+            <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                <div><strong>@PrimaryAttributesLabel:</strong> @summary.PrimaryAttributeBp / @summary.MaxPrimaryBpAllowed @BuildPointsUnit</div>
+                <div><strong>@SpecialAttributesLabel:</strong> @summary.SpecialAttributeBp @BuildPointsUnit</div>
+                <div><strong>Gesamt Attributkosten:</strong> @summary.TotalAttributeBp @BuildPointsUnit</div>
+            </div>
+            @if (summary.ExceedsPrimaryBpLimit)
+            {
+                <div style="color: #b00; font-weight: bold; margin-top: 0.4rem;">
+                    Achtung: Die Kosten für primäre Attribute übersteigen das erlaubte Limit von @summary.MaxPrimaryBpAllowed @BuildPointsUnit!
+                </div>
+            }
+            @if (summary.NaturalMaxCount > 1)
+            {
+                <div style="color: #c60; font-weight: bold; margin-top: 0.4rem;">
+                    Hinweis: Mehr als ein primäres Attribut liegt auf dem natürlichen Maximum (@summary.NaturalMaxCount).
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Abgeleitete Werte & Initiative -->
+    <div class="derived-section" style="border: 1px solid #ccc; background: #fff; padding: 1rem; border-radius: 4px; max-width: 900px;">
+        <h4 style="margin-top: 0; margin-bottom: 1rem; border-bottom: 2px solid #005a9e; padding-bottom: 0.3rem;">
+            Abgeleitete Werte & Initiative
+        </h4>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+            <div style="border: 1px solid #e0e0e0; padding: 0.75rem; border-radius: 4px; background: #fafafa;">
+                <div style="font-size: 0.85rem; color: #555;">@ComposureLabel</div>
+                <div style="font-size: 1.4rem; font-weight: bold;">@DicePoolLabel @derivedAttrs.Composure</div>
+                <div style="font-size: 0.75rem; color: #888;">@GetAttributeCodeLabel("WIL") + @GetAttributeCodeLabel("CHA")</div>
+            </div>
+
+            <div style="border: 1px solid #e0e0e0; padding: 0.75rem; border-radius: 4px; background: #fafafa;">
+                <div style="font-size: 0.85rem; color: #555;">@JudgeIntentionsLabel</div>
+                <div style="font-size: 1.4rem; font-weight: bold;">@DicePoolLabel @derivedAttrs.JudgeIntentions</div>
+                <div style="font-size: 0.75rem; color: #888;">@GetAttributeCodeLabel("INT") + @GetAttributeCodeLabel("CHA")</div>
+            </div>
+
+            <div style="border: 1px solid #e0e0e0; padding: 0.75rem; border-radius: 4px; background: #fafafa;">
+                <div style="font-size: 0.85rem; color: #555;">@LiftAndCarryLabel</div>
+                <div style="font-size: 1.4rem; font-weight: bold;">@DicePoolLabel @derivedAttrs.LiftAndCarry</div>
+                <div style="font-size: 0.75rem; color: #888;">@GetAttributeCodeLabel("BOD") + @GetAttributeCodeLabel("STR")</div>
+            </div>
+
+            <div style="border: 1px solid #e0e0e0; padding: 0.75rem; border-radius: 4px; background: #fafafa;">
+                <div style="font-size: 0.85rem; color: #555;">@MemoryLabel</div>
+                <div style="font-size: 1.4rem; font-weight: bold;">@DicePoolLabel @derivedAttrs.Memory</div>
+                <div style="font-size: 0.75rem; color: #888;">@GetAttributeCodeLabel("LOG") + @GetAttributeCodeLabel("WIL")</div>
+            </div>
+
+            <div style="border: 1px solid #005a9e; padding: 0.75rem; border-radius: 4px; background: #eef3fb;">
+                <div style="font-size: 0.85rem; color: #005a9e; font-weight: bold;">@InitiativeLabel</div>
+                <div style="font-size: 1.4rem; font-weight: bold;">@derivedAttrs.InitiativeTotal</div>
+                <div style="font-size: 0.75rem; color: #666;">@InitiativePassesLabel @derivedAttrs.InitiativePasses</div>
+                <div style="font-size: 0.75rem; color: #666;">
+                    @BaseLabel: @derivedAttrs.InitiativeBase (@GetAttributeCodeLabel("REA") + @GetAttributeCodeLabel("INT"))
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Inject] private IChummerLocalizationAccessor Localization { get; set; } = default!;
+    [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
+
+    private string PrimaryAttributesLabel = string.Empty;
+    private string SpecialAttributesLabel = string.Empty;
+    private string AttributeLabel = string.Empty;
+    private string BaseLabel = string.Empty;
+    private string MetatypeLimitsLabel = string.Empty;
+    private string AugmentedLabel = string.Empty;
+    private string BuildPointsUnit = string.Empty;
+    private string DicePoolLabel = string.Empty;
+    private string InitiativeLabel = string.Empty;
+    private string InitiativePassesLabel = string.Empty;
+    private string ComposureLabel = string.Empty;
+    private string JudgeIntentionsLabel = string.Empty;
+    private string LiftAndCarryLabel = string.Empty;
+    private string MemoryLabel = string.Empty;
+    private readonly Dictionary<string, string> attributeLabels = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> attributeCodeLabels = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        PrimaryAttributesLabel = await Localization.GetRequiredStringAsync("Label_SummaryPrimaryAttributes");
+        SpecialAttributesLabel = await Localization.GetRequiredStringAsync("Label_SummarySpecialAttributes");
+        AttributeLabel = await Localization.GetRequiredStringAsync("String_ExpenseAttribute");
+        BaseLabel = await Localization.GetRequiredStringAsync("Label_Base");
+        MetatypeLimitsLabel = await Localization.GetRequiredStringAsync("Label_MetatypeLimits");
+        AugmentedLabel = await Localization.GetRequiredStringAsync("Label_Augmented");
+        BuildPointsUnit = await Localization.GetRequiredStringAsync("String_BP");
+        DicePoolLabel = await Localization.GetRequiredStringAsync("Label_DicePool");
+        InitiativeLabel = await Localization.GetRequiredStringAsync("String_AttributeINILong");
+        InitiativePassesLabel = await Localization.GetRequiredStringAsync("Label_OtherIP");
+        ComposureLabel = await Localization.GetRequiredStringAsync("Label_OtherCmposure");
+        JudgeIntentionsLabel = await Localization.GetRequiredStringAsync("Label_OtherJudgeIntention");
+        LiftAndCarryLabel = await Localization.GetRequiredStringAsync("Label_OtherLiftAndCarry");
+        MemoryLabel = await Localization.GetRequiredStringAsync("Label_OtherMemory");
+
+        foreach (var (code, key) in new[]
+        {
+            ("BOD", "String_AttributeBODLong"),
+            ("AGI", "String_AttributeAGILong"),
+            ("REA", "String_AttributeREALong"),
+            ("STR", "String_AttributeSTRLong"),
+            ("CHA", "String_AttributeCHALong"),
+            ("INT", "String_AttributeINTLong"),
+            ("LOG", "String_AttributeLOGLong"),
+            ("WIL", "String_AttributeWILLong"),
+            ("EDG", "String_AttributeEDGLong"),
+            ("MAG", "String_AttributeMAGLong"),
+            ("RES", "String_AttributeRESLong")
+        })
+        {
+            attributeLabels[code] = await Localization.GetRequiredStringAsync(key);
+        }
+
+        foreach (var (code, key) in new[]
+        {
+            ("BOD", "String_AttributeBODShort"),
+            ("AGI", "String_AttributeAGIShort"),
+            ("REA", "String_AttributeREAShort"),
+            ("STR", "String_AttributeSTRShort"),
+            ("CHA", "String_AttributeCHAShort"),
+            ("INT", "String_AttributeINTShort"),
+            ("LOG", "String_AttributeLOGShort"),
+            ("WIL", "String_AttributeWILShort"),
+            ("EDG", "String_AttributeEDGShort"),
+            ("MAG", "String_AttributeMAGShort"),
+            ("RES", "String_AttributeRESShort")
+        })
+        {
+            attributeCodeLabels[code] = await Localization.GetRequiredStringAsync(key);
+        }
+    }
+
+    private AttributesSkillsManager manager = default!;
+    private IReadOnlyList<AttributeModel> attributes = [];
+    private DerivedAttributes derivedAttrs = new(0, 0, 0, 0, 0, 0, 1);
+    private AttributesSummary summary = new(0, 0, 0, 200, false, 0);
+
+    protected override void OnParametersSet()
+    {
+        manager = new AttributesSkillsManager(Session);
+        Reload();
+    }
+
+    private void Reload()
+    {
+        attributes = manager.GetAttributes();
+        derivedAttrs = manager.GetDerivedAttributes();
+        summary = manager.CalculateAttributesSummary();
+    }
+
+    private void IncrementAttribute(string name, int delta)
+    {
+        var attr = attributes.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (attr is null)
+            return;
+
+        int newVal = attr.BaseValue + delta;
+        if (newVal < attr.MetatypeMin)
+            newVal = attr.MetatypeMin;
+        if (attr.MetatypeMax > 0 && newVal > attr.MetatypeMax)
+            newVal = attr.MetatypeMax;
+
+        manager.UpdateAttributeValue(name, newVal);
+        Reload();
+    }
+
+    private string GetAttributeLabel(string name) =>
+        attributeLabels.TryGetValue(name, out var label) ? label : name == "ESS" ? "Essenz" : string.Empty;
+
+    private string GetAttributeCodeLabel(string code) =>
+        attributeCodeLabels.TryGetValue(code, out var label) ? label : code;
+}

@@ -1,0 +1,283 @@
+@using ChummerGen.Domain.Character
+@using ChummerGen.Domain.Character.Qualities
+
+<div class="qualities-tab-container" style="display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 1rem;">
+    <!-- Linke Spalte: Ausgewaehlte Qualitaeten (Baeume/Gruppen fuer Positiv und Negativ) -->
+    <div class="qualities-tree-column" style="border: 1px solid #ccc; background: #fafafa; padding: 0.5rem; border-radius: 2px;">
+        <div class="qualities-actions" style="margin-bottom: 0.5rem; display: flex; gap: 0.4rem;">
+            <button type="button" class="btn btn-sm btn-outline-danger"
+                    disabled="@(!CanDeleteSelected)"
+                    @onclick="DeleteSelectedQualityAsync">
+                @DeleteLabel
+            </button>
+            <span style="font-size: 0.8rem; color: #666; align-self: center;">
+                @(SelectedQuality?.IsFromMetatype == true ? "(Metatyp-Gabe)" : "")
+            </span>
+        </div>
+
+        <div class="qualities-group" style="margin-bottom: 1rem;">
+            <div style="font-weight: bold; background: #e0e0e0; padding: 0.2rem 0.4rem; font-size: 0.9rem; border-bottom: 1px solid #ccc;">
+                @PositiveQualitiesLabel [@positiveQualities.Count] — @(summary.PositiveBpTotal) @BpLabel / @(summary.PositiveKarmaTotal) @KarmaLabel
+            </div>
+            <ul class="list-unstyled mb-0" style="list-style: none; padding-left: 0;">
+                @foreach (var q in positiveQualities)
+                {
+                    <li style="padding: 0.25rem 0.5rem; cursor: pointer; border-bottom: 1px solid #eee; background: @(selectedGuid == q.Guid ? "#316ac5" : "transparent"); color: @(selectedGuid == q.Guid ? "#fff" : (q.IsFromMetatype ? "#666" : "#000"));"
+                        @onclick="() => SelectQuality(q.Guid)">
+                        <span>@(q.DisplayName)</span>
+                        <span style="float: right; font-size: 0.85rem;">@(q.Bp) @BpLabel</span>
+                    </li>
+                }
+                @if (positiveQualities.Count == 0)
+                {
+                    <li style="padding: 0.25rem 0.5rem; color: #888; font-style: italic;">Keine Gaben</li>
+                }
+            </ul>
+        </div>
+
+        <div class="qualities-group">
+            <div style="font-weight: bold; background: #e0e0e0; padding: 0.2rem 0.4rem; font-size: 0.9rem; border-bottom: 1px solid #ccc;">
+                @NegativeQualitiesLabel [@negativeQualities.Count] — @(summary.NegativeBpTotal) @BpLabel / @(summary.NegativeKarmaTotal) @KarmaLabel
+            </div>
+            <ul class="list-unstyled mb-0" style="list-style: none; padding-left: 0;">
+                @foreach (var q in negativeQualities)
+                {
+                    <li style="padding: 0.25rem 0.5rem; cursor: pointer; border-bottom: 1px solid #eee; background: @(selectedGuid == q.Guid ? "#316ac5" : "transparent"); color: @(selectedGuid == q.Guid ? "#fff" : (q.IsFromMetatype ? "#666" : "#000"));"
+                        @onclick="() => SelectQuality(q.Guid)">
+                        <span>@(q.DisplayName)</span>
+                        <span style="float: right; font-size: 0.85rem;">@(q.Bp) @BpLabel</span>
+                    </li>
+                }
+                @if (negativeQualities.Count == 0)
+                {
+                    <li style="padding: 0.25rem 0.5rem; color: #888; font-style: italic;">Keine Handicaps</li>
+                }
+            </ul>
+        </div>
+
+        <div class="qualities-summary-box" style="margin-top: 1rem; padding: 0.5rem; background: #eef; border: 1px solid #ccd; font-size: 0.85rem;">
+            <div><strong>Bilanz @BpLabel:</strong> @(summary.NetBpTotal) @BpLabel</div>
+            <div><strong>Bilanz @KarmaLabel:</strong> @(summary.NetKarmaTotal) @KarmaLabel</div>
+            @if (summary.PositiveBpTotal > 35)
+            {
+                <div style="color: #b00; font-weight: bold;">Hinweis: Gaben übersteigen 35 GP!</div>
+            }
+            @if (Math.Abs(summary.NegativeBpTotal) > 35)
+            {
+                <div style="color: #b00; font-weight: bold;">Hinweis: Handicaps übersteigen 35 GP!</div>
+            }
+        </div>
+    </div>
+
+    <!-- Rechte Spalte: Detailansicht der gewaehlten Qualitaet & Verbesserungen -->
+    <div class="qualities-detail-column" style="border: 1px solid #ccc; background: #fff; padding: 1rem; border-radius: 2px;">
+        @if (SelectedQuality is not null)
+        {
+            <div style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #ccc; padding-bottom: 0.4rem; margin-bottom: 1rem;">
+                <h3 style="margin: 0; font-size: 1.3rem;">@SelectedQuality.DisplayName</h3>
+                <span class="badge @(SelectedQuality.Category == QualityCategory.Positive ? "bg-success" : "bg-danger")">
+                    @(SelectedQuality.Category == QualityCategory.Positive ? "Gabe (Positiv)" : "Handicap (Negativ)")
+                </span>
+            </div>
+
+            <dl style="display: grid; grid-template-columns: 140px 1fr; gap: 0.4rem 1rem; margin-bottom: 1rem; font-size: 0.9rem;">
+                <dt>@CostLabel (@BpLabel):</dt>
+                <dd>@SelectedQuality.Bp @BpLabel</dd>
+
+                <dt>@CostLabel (@KarmaLabel):</dt>
+                <dd>@(SelectedQuality.Bp * KarmaMultiplier) @KarmaLabel</dd>
+
+                <dt>@SourceLabel</dt>
+                <dd>@(string.IsNullOrWhiteSpace(SelectedQuality.SourceDisplay) ? "—" : SelectedQuality.SourceDisplay)</dd>
+
+                <dt>Herkunft:</dt>
+                <dd>@(SelectedQuality.SourceType.ToString())</dd>
+
+                <dt>Zählt zum Limit:</dt>
+                <dd>@(SelectedQuality.ContributeToLimit ? "Ja" : "Nein")</dd>
+
+                <dt>Drucken:</dt>
+                <dd>
+                    <label style="cursor: pointer;">
+                        <input type="checkbox" checked="@SelectedQuality.Print" @onchange="OnPrintChanged" />
+                        Auf Charakterbogen anzeigen
+                    </label>
+                </dd>
+            </dl>
+
+            <div style="margin-bottom: 1rem;">
+                <label for="quality-notes" style="font-weight: bold; font-size: 0.9rem;">@NotesLabel</label>
+                <textarea id="quality-notes" class="form-control" rows="3"
+                          value="@SelectedQuality.Notes"
+                          @onchange="OnNotesChanged"></textarea>
+            </div>
+
+            <!-- Zugehoerige Verbesserungen -->
+            <div class="quality-improvements" style="margin-top: 1.5rem; border-top: 1px solid #eee; padding-top: 1rem;">
+                <h4 style="font-size: 1.05rem; margin-bottom: 0.5rem;">Zugehörige Verbesserungen (@linkedImprovements.Count)</h4>
+                @if (linkedImprovements.Count > 0)
+                {
+                    <table class="table table-sm table-bordered" style="font-size: 0.85rem;">
+                        <thead style="background: #f0f0f0;">
+                            <tr>
+                                <th>@ImprovementTypeLabel</th>
+                                <th>@ImprovementValueLabel</th>
+                                <th>@RatingLabel</th>
+                                <th>@MinimumLabel / @MaximumLabel</th>
+                                <th>@ActiveLabel</th>
+                                <th>Notiz</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var imp in linkedImprovements)
+                            {
+                                <tr>
+                                    <td><strong>@imp.ImprovementType</strong></td>
+                                    <td>@(imp.Val != 0 ? imp.Val.ToString() : "—")</td>
+                                    <td>@(imp.Rating != 0 ? imp.Rating.ToString() : "—")</td>
+                                    <td>@($"{imp.Min} / {imp.Max}")</td>
+                                    <td>@(imp.Enabled ? "Ja" : "Nein")</td>
+                                    <td>@(imp.Notes ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p style="color: #666; font-style: italic; font-size: 0.85rem;">Keine spezifischen Verbesserungen mit dieser Gabe verknüpft.</p>
+                }
+            </div>
+        }
+        else
+        {
+            <div style="color: #666; text-align: center; padding: 3rem 1rem;">
+                <p>Wählen Sie eine Gabe oder ein Handicap aus der linken Liste aus, um Details und Verbesserungen anzuzeigen.</p>
+                <div style="margin-top: 1rem; font-size: 0.85rem; color: #888;">
+                    <em>Hinweis: Das Hinzufügen neuer Gaben erfordert den vollständigen Bonus-/Auswahlkatalog und ist für spätere Wellen vorgesehen.</em>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Inject] private IChummerLocalizationAccessor Localization { get; set; } = default!;
+    [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
+
+    private string DeleteLabel = string.Empty;
+    private string PositiveQualitiesLabel = string.Empty;
+    private string NegativeQualitiesLabel = string.Empty;
+    private string SourceLabel = string.Empty;
+    private string NotesLabel = string.Empty;
+    private string ActiveLabel = string.Empty;
+    private string BpLabel = string.Empty;
+    private string KarmaLabel = string.Empty;
+    private string CostLabel = string.Empty;
+    private string ImprovementTypeLabel = string.Empty;
+    private string ImprovementValueLabel = string.Empty;
+    private string RatingLabel = string.Empty;
+    private string MinimumLabel = string.Empty;
+    private string MaximumLabel = string.Empty;
+
+    private QualitiesManager manager = default!;
+    private IReadOnlyList<QualityModel> positiveQualities = [];
+    private IReadOnlyList<QualityModel> negativeQualities = [];
+    private QualitiesSummary summary = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
+    private string? selectedGuid;
+    private IReadOnlyList<ImprovementModel> linkedImprovements = [];
+
+    private QualityModel? SelectedQuality =>
+        string.IsNullOrWhiteSpace(selectedGuid)
+            ? null
+            : manager.GetAllQualities().FirstOrDefault(q => string.Equals(q.Guid, selectedGuid, StringComparison.OrdinalIgnoreCase));
+
+    private bool CanDeleteSelected =>
+        SelectedQuality is not null && !SelectedQuality.IsFromMetatype;
+
+    private int KarmaMultiplier =>
+        Session.Settings.QualityKarmaCost > 0 ? Session.Settings.QualityKarmaCost : 2;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DeleteLabel = await Localization.GetRequiredStringAsync("String_Delete");
+        PositiveQualitiesLabel = await Localization.GetRequiredStringAsync("Label_SummaryPositiveQualities");
+        NegativeQualitiesLabel = await Localization.GetRequiredStringAsync("Label_SummaryNegativeQualities");
+        SourceLabel = await Localization.GetRequiredStringAsync("Label_Source");
+        NotesLabel = await Localization.GetRequiredStringAsync("Label_Notes");
+        ActiveLabel = await Localization.GetRequiredStringAsync("String_DescActive");
+        BpLabel = await Localization.GetRequiredStringAsync("String_BP");
+        KarmaLabel = await Localization.GetRequiredStringAsync("String_Karma");
+        CostLabel = (await Localization.GetRequiredStringAsync("Label_Cost")).TrimEnd(':');
+        ImprovementTypeLabel = (await Localization.GetRequiredStringAsync("Label_ImprovementType")).TrimEnd(':');
+        ImprovementValueLabel = (await Localization.GetRequiredStringAsync("Label_CreateImprovementValue")).TrimEnd(':');
+        RatingLabel = await Localization.GetRequiredStringAsync("String_Rating");
+        MinimumLabel = (await Localization.GetRequiredStringAsync("Label_CreateImprovementMinimum")).TrimEnd(':');
+        MaximumLabel = (await Localization.GetRequiredStringAsync("Label_CreateImprovementMaximum")).TrimEnd(':');
+    }
+
+    protected override void OnParametersSet()
+    {
+        manager = new QualitiesManager(Session);
+        Reload();
+    }
+
+    private void Reload()
+    {
+        positiveQualities = manager.GetPositiveQualities();
+        negativeQualities = manager.GetNegativeQualities();
+        summary = manager.CalculateSummary();
+
+        if (selectedGuid is not null && SelectedQuality is null)
+            selectedGuid = null;
+
+        UpdateLinkedImprovements();
+    }
+
+    private void SelectQuality(string guid)
+    {
+        selectedGuid = guid;
+        UpdateLinkedImprovements();
+    }
+
+    private void UpdateLinkedImprovements()
+    {
+        if (string.IsNullOrWhiteSpace(selectedGuid))
+        {
+            linkedImprovements = [];
+        }
+        else
+        {
+            linkedImprovements = manager.GetImprovementsForQuality(selectedGuid);
+        }
+    }
+
+    private void OnPrintChanged(ChangeEventArgs e)
+    {
+        if (SelectedQuality is not null && e.Value is bool b)
+        {
+            manager.UpdatePrint(SelectedQuality.Guid, b);
+        }
+    }
+
+    private void OnNotesChanged(ChangeEventArgs e)
+    {
+        if (SelectedQuality is not null)
+        {
+            manager.UpdateNotes(SelectedQuality.Guid, e.Value?.ToString());
+        }
+    }
+
+    private void DeleteSelectedQualityAsync()
+    {
+        if (SelectedQuality is null || SelectedQuality.IsFromMetatype)
+            return;
+
+        var guidToDelete = SelectedQuality.Guid;
+        if (manager.DeleteQuality(guidToDelete))
+        {
+            selectedGuid = null;
+            Reload();
+        }
+    }
+}

@@ -1,0 +1,134 @@
+@page "/Admin/Users"
+@attribute [Authorize(Roles = RoleNames.Administrator)]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDatabaseBackupService BackupService
+
+<PageTitle>Benutzerverwaltung</PageTitle>
+
+<h1>Benutzerverwaltung</h1>
+<p>Konten sind standardmäßig privat. Gesperrte Benutzer können sich nicht anmelden.</p>
+<button class="btn btn-outline-secondary mb-3" @onclick="CreateBackupAsync">Datenbank sichern</button>
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <p role="status">@statusMessage</p>
+}
+
+<div class="table-responsive">
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th scope="col">E-Mail</th>
+                <th scope="col">Status</th>
+                <th scope="col">Aktion</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var account in accounts)
+            {
+                <tr>
+                    <td>@account.Email</td>
+                    <td>@(account.IsLocked ? "Gesperrt" : "Aktiv")</td>
+                    <td>
+                        @if (account.Id != currentUserId)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleLockoutAsync(account.Id, account.IsLocked)">
+                                @(account.IsLocked ? "Entsperren" : "Sperren")
+                            </button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<AccountRow> accounts = [];
+    private string? currentUserId;
+    private string? statusMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        await LoadAccountsAsync();
+    }
+
+    private async Task ToggleLockoutAsync(string userId, bool isLocked)
+    {
+        if (string.Equals(userId, currentUserId, StringComparison.Ordinal))
+        {
+            statusMessage = "Das eigene Administratorkonto kann hier nicht gesperrt werden.";
+            return;
+        }
+
+        var user = await UserManager.FindByIdAsync(userId);
+        if (user is null)
+        {
+            statusMessage = "Das Benutzerkonto wurde nicht gefunden.";
+            await LoadAccountsAsync();
+            return;
+        }
+
+        if (await UserManager.IsInRoleAsync(user, RoleNames.Administrator))
+        {
+            var administrators = await UserManager.GetUsersInRoleAsync(RoleNames.Administrator);
+            if (!isLocked && administrators.Count <= 1)
+            {
+                statusMessage = "Der letzte Administrator kann nicht gesperrt werden.";
+                return;
+            }
+        }
+
+        var lockoutEnabled = await UserManager.SetLockoutEnabledAsync(user, true);
+        if (!lockoutEnabled.Succeeded)
+        {
+            statusMessage = "Der Kontostatus konnte nicht geändert werden.";
+            return;
+        }
+
+        DateTimeOffset? lockoutEnd = isLocked ? null : DateTimeOffset.UtcNow.AddYears(100);
+        var lockoutResult = await UserManager.SetLockoutEndDateAsync(user, lockoutEnd);
+        if (!lockoutResult.Succeeded)
+        {
+            statusMessage = "Der Kontostatus konnte nicht geändert werden.";
+            return;
+        }
+
+        statusMessage = isLocked ? "Konto entsperrt." : "Konto gesperrt.";
+        await LoadAccountsAsync();
+    }
+
+    private async Task LoadAccountsAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var users = await UserManager.Users
+            .AsNoTracking()
+            .OrderBy(user => user.Email)
+            .ToListAsync();
+        accounts = users
+            .Select(user => new AccountRow(
+                user.Id,
+                user.Email ?? "",
+                user.LockoutEnabled && user.LockoutEnd.HasValue && user.LockoutEnd.Value > now))
+            .ToList();
+    }
+
+    private async Task CreateBackupAsync()
+    {
+        var backupName = await BackupService.CreateBackupAsync(CancellationToken.None);
+        statusMessage = $"Sicherung erstellt: {backupName}";
+    }
+
+    private sealed record AccountRow(string Id, string Email, bool IsLocked);
+}

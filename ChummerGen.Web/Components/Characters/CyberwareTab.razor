@@ -1,0 +1,384 @@
+﻿@using System.Globalization
+@using ChummerGen.Domain.Abstractions
+@using ChummerGen.Domain.Character
+@using ChummerGen.Domain.Character.Cyberware
+@inject IRuleCatalog RuleCatalog
+@inject ChummerGen.Web.Localization.IChummerLocalizationAccessor Localization
+
+<div class="cyber-container">
+    <div class="cyber-summary-bar">
+        <span>Essenz Cyberware: <strong>@Essence.Cyberware.ToString("0.00", CultureInfo.InvariantCulture)</strong></span>
+        <span>Essenz Bioware: <strong>@Essence.Bioware.ToString("0.00", CultureInfo.InvariantCulture)</strong></span>
+        @if (Essence.EssenceHole != 0)
+        {
+            <span>@T("Label_EssenceHole") <strong>@Essence.EssenceHole.ToString("0.00", CultureInfo.InvariantCulture)</strong></span>
+        }
+        <span>Essenzverlust gesamt: <strong>@Essence.Total.ToString("0.00", CultureInfo.InvariantCulture)</strong></span>
+        <span>Gesamtkosten: <strong>@Manager.TotalCost().ToString("N0", CultureInfo.InvariantCulture) ¥</strong></span>
+    </div>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <p class="@(messageIsError ? "text-danger" : "text-success")" role="status">@message</p>
+    }
+
+    <div class="cyber-layout">
+        <div class="cyber-list-pane">
+            <table class="table table-sm table-hover cyber-table">
+                <thead>
+                    <tr>
+                        <th>@T("Label_Name")</th>
+                        <th>@T("Label_Category")</th>
+                        <th>@T("Label_Grade")</th>
+                        <th class="text-end">@T("Label_Essence")</th>
+                        <th class="text-end">@T("Label_Capacity")</th>
+                        <th class="text-end">@T("Label_Avail")</th>
+                        <th class="text-end">@T("Label_Cost")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var (item, depth) in Rows())
+                    {
+                        var grades = Manager.GradesFor(item);
+                        <tr class="@(selected?.Guid == item.Guid ? "table-active" : null)" @onclick="() => Select(item)" style="cursor: pointer;">
+                            <td style="padding-left: @(0.4 + depth * 1.1)rem;">
+                                @(depth > 0 ? "↳ " : "")<strong>@item.DisplayName</strong>
+                                @if (item.SourceType == CyberwareSource.Bioware)
+                                {
+                                    <span class="text-muted">(@T("Label_Bioware"))</span>
+                                }
+                            </td>
+                            <td>@item.Category</td>
+                            <td>@item.GradeName</td>
+                            <td class="text-end">@item.CalculatedEssence(grades).ToString("0.00", CultureInfo.InvariantCulture)</td>
+                            <td class="text-end">@item.CalculatedCapacity</td>
+                            <td class="text-end">@item.TotalAvail(grades)</td>
+                            <td class="text-end">@item.TotalCost(grades).ToString("N0", CultureInfo.InvariantCulture) ¥</td>
+                        </tr>
+                    }
+                    @if (!Manager.GetItems().Any())
+                    {
+                        <tr><td colspan="7" class="text-muted">Keine Cyberware oder Bioware vorhanden.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="cyber-side-pane">
+            @if (selected is not null)
+            {
+                var grades = Manager.GradesFor(selected);
+                <div class="cyber-detail-pane">
+                    <h4>Details: @selected.DisplayNameShort</h4>
+                    <div class="cyber-edit-fields">
+                        @if (selected.MaxRating > 0)
+                        {
+                            <label>@T("String_Rating") (@selected.MinRating – @selected.MaxRating)</label>
+                            <input type="number" min="@selected.MinRating" max="@selected.MaxRating" class="form-control form-control-sm"
+                                   value="@selected.Rating" @onchange="OnRatingChanged" />
+                        }
+
+                        <label>@T("Label_Grade")</label>
+                        <select class="form-select form-select-sm" value="@selected.GradeName" @onchange="OnGradeChanged"
+                                disabled="@(selected.Parent is not null || grades.Grades.Count == 0)">
+                            @foreach (var grade in grades.Grades)
+                            {
+                                <option value="@grade.Name">@grade.Name</option>
+                            }
+                            @if (!grades.Contains(selected.GradeName))
+                            {
+                                <option value="@selected.GradeName">@selected.GradeName</option>
+                            }
+                        </select>
+
+                        <label>Ort / Seite</label>
+                        <input class="form-control form-control-sm" value="@selected.Location" @onchange="e => { selected.Location = e.Value?.ToString() ?? string.Empty; }" />
+
+                        @if (Session.Settings.AllowCyberwareEssenceDiscounts)
+                        {
+                            <label>@T("Checkbox_Options_AllowCyberwareESSDiscounts")</label>
+                            <input type="number" min="0" max="100" class="form-control form-control-sm" value="@selected.EssenceDiscount"
+                                   @onchange="OnEssenceDiscountChanged" />
+                        }
+
+                        <label>@T("Checkbox_BlackMarketDiscount")</label>
+                        <div>
+                            <input type="checkbox" id="chk-cyber-discount" checked="@selected.DiscountCost"
+                                   @onchange="e => { selected.DiscountCost = (bool)(e.Value ?? false); }" />
+                            <label for="chk-cyber-discount" style="display:inline; font-weight:normal;">@T("Checkbox_Active")</label>
+                        </div>
+
+                        <label>@T("Label_Notes")</label>
+                        <textarea class="form-control form-control-sm" rows="3" value="@selected.Notes"
+                                  @onchange="e => { selected.Notes = e.Value?.ToString() ?? string.Empty; }"></textarea>
+                    </div>
+
+                    <dl class="row mb-0 mt-3 cyber-meta">
+                        <dt class="col-sm-5">@T("Label_Essence")</dt>
+                        <dd class="col-sm-7">@selected.CalculatedEssence(grades).ToString("0.00", CultureInfo.InvariantCulture) (@selected.EssExpression)</dd>
+                        <dt class="col-sm-5">@T("Label_Cost")</dt>
+                        <dd class="col-sm-7">@selected.TotalCost(grades).ToString("N0", CultureInfo.InvariantCulture) ¥ (@selected.CostExpression)</dd>
+                        <dt class="col-sm-5">@T("Label_Avail")</dt>
+                        <dd class="col-sm-7">@selected.TotalAvail(grades)</dd>
+                        @if (!string.IsNullOrWhiteSpace(selected.CapacityExpression))
+                        {
+                            <dt class="col-sm-5">@T("Label_Capacity")</dt>
+                            <dd class="col-sm-7">@selected.CalculatedCapacity@(selected.HasCapacity && selected.Children.Count > 0 ? $" (Frei: {selected.CapacityRemaining})" : "")</dd>
+                        }
+                        @if (selected.Bonus is not null)
+                        {
+                            <dt class="col-sm-5">Boni:</dt>
+                            <dd class="col-sm-7">vorhanden (nur Anzeige, bleiben erhalten)</dd>
+                        }
+                        <dt class="col-sm-5">@T("Label_Source")</dt>
+                        <dd class="col-sm-7">@selected.Source @selected.Page</dd>
+                    </dl>
+
+                    <button type="button" class="btn btn-sm btn-outline-danger mt-2" @onclick="RemoveSelected">@T("String_Delete")</button>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted">Wählen Sie ein Implantat zur Bearbeitung aus.</p>
+            }
+
+            <div class="cyber-add-pane">
+                <h4>Hinzufügen</h4>
+                @if (!catalogAvailable)
+                {
+                    <p class="text-muted">Der Cyberware-Katalog ist nicht verfügbar.</p>
+                }
+                else
+                {
+                    <div class="cyber-edit-fields">
+                        <label>Art</label>
+                        <select class="form-select form-select-sm" value="@addSource" @onchange="OnAddSourceChanged" disabled="@(selected is not null && asPlugin)">
+                            <option value="@CyberwareSource.Cyberware">Cyberware</option>
+                            <option value="@CyberwareSource.Bioware">Bioware</option>
+                        </select>
+
+                        @if (selected is not null)
+                        {
+                            <label>Plugin</label>
+                            <div>
+                                <input type="checkbox" id="chk-cyber-plugin" checked="@asPlugin" @onchange="e => { asPlugin = (bool)(e.Value ?? false); addName = string.Empty; }" />
+                                <label for="chk-cyber-plugin" style="display:inline; font-weight:normal;">in „@selected.DisplayNameShort“</label>
+                            </div>
+                        }
+
+                        <label>@T("Label_Category")</label>
+                        <select class="form-select form-select-sm" value="@addCategory" @onchange="e => { addCategory = e.Value?.ToString() ?? string.Empty; addName = string.Empty; }">
+                            <option value="">(alle)</option>
+                            @foreach (var category in AddCategories)
+                            {
+                                <option value="@category">@category</option>
+                            }
+                        </select>
+
+                        <label>Eintrag</label>
+                        <select class="form-select form-select-sm" value="@addName" @onchange="OnAddNameChanged">
+                            <option value="">–</option>
+                            @foreach (var entry in AddEntries)
+                            {
+                                <option value="@entry.Name">@entry.Name</option>
+                            }
+                        </select>
+
+                        <label>@T("Label_Grade")</label>
+                        <select class="form-select form-select-sm" value="@addGrade" @onchange="e => { addGrade = e.Value?.ToString() ?? string.Empty; }" disabled="@asPlugin">
+                            @foreach (var grade in AddGrades.Grades)
+                            {
+                                <option value="@grade.Name">@grade.Name</option>
+                            }
+                        </select>
+
+                        @if (SelectedEntry is { } ratedEntry && HasRating(ratedEntry))
+                        {
+                            <label>@T("String_Rating") (@MinRatingOf(ratedEntry) – @MaxRatingOf(ratedEntry))</label>
+                            <input type="number" min="@MinRatingOf(ratedEntry)" max="@MaxRatingOf(ratedEntry)" class="form-control form-control-sm"
+                                   value="@addRating" @onchange="e => { addRating = int.TryParse(e.Value?.ToString(), out var r) ? r : 0; }" />
+                        }
+                    </div>
+                    @if (SelectedEntry is { } picked && Manager.GetAddBlocker(picked) is { } blocker)
+                    {
+                        <p class="text-warning small mt-2">@blocker</p>
+                    }
+                    <button type="button" class="btn btn-sm btn-primary mt-2" @onclick="AddSelected"
+                            disabled="@(SelectedEntry is null || Manager.GetAddBlocker(SelectedEntry) is not null)">Hinzufügen</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .cyber-container { font-family: var(--font-ui, "Segoe UI", Tahoma, Arial, sans-serif); font-size: 13px; }
+    .cyber-summary-bar { display: flex; flex-wrap: wrap; gap: 1.5rem; padding: 0.4rem 0.6rem; background: #f0f0f0; border: 1px solid #ccc; margin-bottom: 0.75rem; }
+    .cyber-layout { display: grid; grid-template-columns: 1fr 340px; gap: 1rem; align-items: start; }
+    .cyber-list-pane { overflow-x: auto; border: 1px solid #ccc; background: #fff; }
+    .cyber-table { margin-bottom: 0; font-size: 12px; }
+    .cyber-table th { background: #f5f5f5; border-bottom: 2px solid #ddd; padding: 4px 6px; }
+    .cyber-table td { padding: 4px 6px; vertical-align: middle; }
+    .cyber-detail-pane, .cyber-add-pane { border: 1px solid #ccc; background: #fafafa; padding: 0.75rem; margin-bottom: 0.75rem; }
+    .cyber-detail-pane h4, .cyber-add-pane h4 { font-size: 14px; font-weight: 600; margin: 0 0 0.5rem; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+    .cyber-edit-fields { display: grid; grid-template-columns: 110px 1fr; gap: 0.35rem 0.5rem; align-items: center; font-size: 12px; }
+    .cyber-edit-fields label { font-weight: 500; margin-bottom: 0; }
+    .cyber-meta { font-size: 11px; border-top: 1px solid #ddd; padding-top: 0.5rem; }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
+
+    private CyberwareCatalog catalog = CyberwareCatalog.Empty;
+    private CyberwareManager? manager;
+    private CyberwareItem? selected;
+    private bool catalogAvailable;
+    private string? message;
+    private bool messageIsError;
+
+    private CyberwareSource addSource = CyberwareSource.Cyberware;
+    private bool asPlugin;
+    private string addCategory = string.Empty;
+    private string addName = string.Empty;
+    private string addGrade = "Standard";
+    private int addRating;
+
+    private CyberwareManager Manager => manager ??= new CyberwareManager(Session, catalog);
+    private CyberwareEssenceSummary Essence => Manager.EssenceSummary();
+    private CyberwareSource EffectiveSource => asPlugin && selected is not null ? selected.SourceType : addSource;
+    private CyberwareGradeTable AddGrades => catalog.GradesFor(EffectiveSource);
+
+    private IEnumerable<string> AddCategories =>
+        catalog.Entries(EffectiveSource).Select(e => e.Category).Distinct().OrderBy(c => c, StringComparer.Ordinal);
+
+    private IEnumerable<CyberwareCatalogEntry> AddEntries =>
+        catalog.Entries(EffectiveSource).Where(e =>
+            (addCategory.Length == 0 || e.Category == addCategory)
+            && (!asPlugin || selected is null || IsPluginCandidate(selected, e)));
+
+    private CyberwareCatalogEntry? SelectedEntry => addName.Length == 0 ? null : catalog.Find(EffectiveSource, addName);
+
+    private static readonly string[] LabelKeys =
+    [
+        "Label_EssenceHole", "Label_Name", "Label_Category", "Label_Grade", "Label_Essence", "Label_Capacity", "Label_Avail",
+        "Label_Cost", "Label_Bioware", "Label_Notes", "Label_Source", "Checkbox_BlackMarketDiscount",
+        "Checkbox_Options_AllowCyberwareESSDiscounts", "String_Rating", "String_Delete", "Checkbox_Active"
+    ];
+
+    private readonly Dictionary<string, string> labels = new(StringComparer.Ordinal);
+
+    private string T(string key) => labels[key];
+
+    protected override async Task OnInitializedAsync()
+    {
+        foreach (var key in LabelKeys)
+            labels[key] = await Localization.GetRequiredStringAsync(key);
+
+        try
+        {
+            catalog = await CyberwareCatalog.LoadAsync(RuleCatalog);
+            catalogAvailable = catalog.CyberwareGrades.Grades.Count > 0 || catalog.BiowareGrades.Grades.Count > 0;
+        }
+        catch (Exception exception) when (exception is IOException or System.Xml.XmlException or ArgumentException)
+        {
+            catalogAvailable = false;
+        }
+
+        manager = new CyberwareManager(Session, catalog);
+        addGrade = AddGrades.Get("Standard").Name;
+    }
+
+    private IEnumerable<(CyberwareItem Item, int Depth)> Rows()
+    {
+        foreach (var root in Manager.GetItems())
+            foreach (var row in Flatten(root, 0))
+                yield return row;
+    }
+
+    private static IEnumerable<(CyberwareItem Item, int Depth)> Flatten(CyberwareItem item, int depth)
+    {
+        yield return (item, depth);
+        foreach (var child in item.Children)
+            foreach (var row in Flatten(child, depth + 1))
+                yield return row;
+    }
+
+    private static bool IsPluginCandidate(CyberwareItem parent, CyberwareCatalogEntry entry) =>
+        entry.Capacity.Contains('[')
+        && parent.Subsystems.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains(entry.Category);
+
+    private static bool HasRating(CyberwareCatalogEntry entry) => entry.Node.Element("rating") is not null;
+
+    private static int MaxRatingOf(CyberwareCatalogEntry entry) =>
+        int.TryParse(entry.Node.Element("rating")?.Value, out var max) ? max : 0;
+
+    private static int MinRatingOf(CyberwareCatalogEntry entry) =>
+        int.TryParse(entry.Node.Element("minrating")?.Value, out var min) ? min : MaxRatingOf(entry) > 0 ? 1 : 0;
+
+    private void Select(CyberwareItem item)
+    {
+        selected = item;
+        message = null;
+    }
+
+    private void Report(CyberwareOperationResult result, string success)
+    {
+        messageIsError = !result.Success;
+        message = result.Success ? success : result.Error;
+    }
+
+    private void OnRatingChanged(ChangeEventArgs e)
+    {
+        if (selected is null || !int.TryParse(e.Value?.ToString(), out var rating))
+            return;
+        Report(Manager.SetRating(selected, rating), "Stufe geändert.");
+    }
+
+    private void OnGradeChanged(ChangeEventArgs e)
+    {
+        if (selected is null)
+            return;
+        Report(Manager.SetGrade(selected, e.Value?.ToString() ?? string.Empty), "Grad geändert.");
+    }
+
+    private void OnEssenceDiscountChanged(ChangeEventArgs e)
+    {
+        if (selected is null)
+            return;
+        selected.EssenceDiscount = int.TryParse(e.Value?.ToString(), out var value) ? Math.Clamp(value, 0, 100) : 0;
+    }
+
+    private void OnAddSourceChanged(ChangeEventArgs e)
+    {
+        addSource = Enum.TryParse<CyberwareSource>(e.Value?.ToString(), out var source) ? source : CyberwareSource.Cyberware;
+        addCategory = string.Empty;
+        addName = string.Empty;
+        addGrade = AddGrades.Get("Standard").Name;
+    }
+
+    private void OnAddNameChanged(ChangeEventArgs e)
+    {
+        addName = e.Value?.ToString() ?? string.Empty;
+        addRating = SelectedEntry is { } entry && HasRating(entry) ? MinRatingOf(entry) : 0;
+    }
+
+    private void AddSelected()
+    {
+        if (SelectedEntry is null)
+            return;
+        var result = Manager.Add(EffectiveSource, addName, addGrade, addRating, asPlugin ? selected?.Guid : null);
+        Report(result, $"'{addName}' hinzugefügt.");
+        if (result.Success)
+            addName = string.Empty;
+    }
+
+    private void RemoveSelected()
+    {
+        if (selected is null)
+            return;
+        var result = Manager.Remove(selected.Guid);
+        Report(result, "Implantat entfernt.");
+        if (result.Success)
+            selected = null;
+    }
+}

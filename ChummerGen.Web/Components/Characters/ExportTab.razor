@@ -1,0 +1,88 @@
+@using ChummerGen.Domain.Character.Export
+@inject IJSRuntime JavaScript
+@inject NavigationManager Navigation
+@inject IChummerLocalizationAccessor Localization
+
+<section class="character-export">
+    <div class="character-export-controls">
+        <label for="character-export-format">@ExportToLabel</label>
+        <select id="character-export-format" class="form-select" @bind="selectedFormat">
+            <option value="">—</option>
+            <option value="chum">Chummer-Datei (*.chum)</option>
+            <option value="print">Druckansicht (HTML)</option>
+        </select>
+        <button type="button" class="btn btn-outline-secondary" @onclick="CancelExport">@CancelLabel</button>
+        <button type="button" class="btn btn-primary" @onclick="ExportAsync"
+                disabled="@(selectedFormat.Length == 0 || selectedFormat == "chum" && DownloadUrl is null)">@OkLabel</button>
+    </div>
+    <p>Der .chum-Download enthält die zuletzt gespeicherte Version. Speichern Sie Änderungen vorher.</p>
+    @if (DownloadUrl is null)
+    {
+        <p role="status">Der geschützte Download ist für diese Charakteradresse nicht verfügbar.</p>
+    }
+    <article class="character-export-sheet">
+        @((MarkupString)CharacterExportService.BuildPrintSummaryHtml(Session))
+    </article>
+</section>
+
+<style>
+    @@media print {
+        body * {
+            visibility: hidden !important;
+        }
+
+        .character-export-sheet, .character-export-sheet * {
+            visibility: visible !important;
+        }
+
+        .character-export-sheet {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+        }
+    }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
+
+    private string ExportToLabel = string.Empty;
+    private string CancelLabel = string.Empty;
+    private string OkLabel = string.Empty;
+    private string selectedFormat = "chum";
+
+    protected override async Task OnInitializedAsync()
+    {
+        ExportToLabel = await Localization.GetRequiredStringAsync("Label_ExportTo");
+        CancelLabel = await Localization.GetRequiredStringAsync("String_Cancel");
+        OkLabel = await Localization.GetRequiredStringAsync("String_OK");
+    }
+
+    private string? DownloadUrl
+    {
+        get
+        {
+            var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/');
+            var segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return segments.Length == 2
+                && segments[0] == "characters"
+                && Guid.TryParse(segments[1], out var characterId)
+                    ? Navigation.ToAbsoluteUri($"characters/{characterId:D}/download").ToString()
+                    : null;
+        }
+    }
+
+    private async Task ExportAsync()
+    {
+        if (selectedFormat == "print")
+        {
+            await JavaScript.InvokeVoidAsync("print");
+            return;
+        }
+
+        if (selectedFormat == "chum" && DownloadUrl is { } downloadUrl)
+            Navigation.NavigateTo(downloadUrl, forceLoad: true);
+    }
+
+    private void CancelExport() => selectedFormat = string.Empty;
+}

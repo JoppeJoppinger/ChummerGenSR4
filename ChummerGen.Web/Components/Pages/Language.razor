@@ -1,0 +1,60 @@
+@page "/Account/Language"
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@inject IChummerLocalizationAccessor Localization
+@inject NavigationManager NavigationManager
+
+<PageTitle>@languageLabel</PageTitle>
+
+<h1>@languageLabel</h1>
+
+<div class="mb-3">
+    <label for="preferred-culture" class="form-label">@languageLabel</label>
+    <select id="preferred-culture" class="form-select" @bind="selectedCulture">
+        @foreach (var culture in supportedCultures)
+        {
+            <option value="@culture">@culture</option>
+        }
+    </select>
+</div>
+
+<button class="btn btn-primary" @onclick="SaveAsync">@saveLabel</button>
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <p class="text-danger mt-3" role="alert">@statusMessage</p>
+}
+
+@code {
+    private IReadOnlyList<string> supportedCultures = [];
+    private string selectedCulture = string.Empty;
+    private string languageLabel = string.Empty;
+    private string saveLabel = string.Empty;
+    private string? statusMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        supportedCultures = Localization.GetSupportedCultures();
+        selectedCulture = await Localization.GetCultureAsync();
+        languageLabel = await Localization.GetRequiredStringAsync("Label_Options_Language");
+        saveLabel = await Localization.GetRequiredStringAsync("String_OK");
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await Localization.SetCultureAsync(selectedCulture);
+            NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+        }
+        catch (CultureNotSupportedException exception)
+        {
+            statusMessage = $"Nicht unterstützte Sprache: {exception.Culture}";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            statusMessage = "Zum Ändern der Sprache ist eine Anmeldung erforderlich.";
+        }
+    }
+}

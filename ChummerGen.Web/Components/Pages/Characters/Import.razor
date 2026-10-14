@@ -1,0 +1,112 @@
+@page "/characters/import"
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using ChummerGen.Infrastructure.Import
+@using ChummerGen.Domain.Models
+@inject ChumImportService ImportService
+@inject NavigationManager Navigation
+
+<PageTitle>Charakter importieren</PageTitle>
+
+<section class="character-page">
+    <p class="eyebrow">CHARAKTERVERWALTUNG</p>
+    <h1>Charakter importieren</h1>
+    <p>Wählen Sie eine .chum-Datei aus. Der Charakter wird erst nach Prüfung der Vorschau gespeichert.</p>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <p role="alert" class="import-message">@statusMessage</p>
+    }
+
+    <div class="import-form">
+        <label for="chum-file">.chum-Datei</label>
+        <InputFile id="chum-file" OnChange="PreviewFileAsync" accept=".chum" />
+        <small>Maximale Dateigröße: 10 MB.</small>
+    </div>
+
+    @if (preview is not null)
+    {
+        <section class="preview-card" aria-labelledby="preview-heading">
+            <h2 id="preview-heading">Vorschau</h2>
+            <dl class="preview-fields">
+                <dt>Name</dt><dd>@Display(preview.Name)</dd>
+                <dt>Alias</dt><dd>@Display(preview.Alias)</dd>
+                <dt>Metatyp</dt><dd>@Display(preview.Metatype)</dd>
+                <dt>Chummer-Version</dt><dd>@Display(preview.Version)</dd>
+                <dt>Karma</dt><dd>@Display(preview.Karma)</dd>
+                <dt>Nuyen</dt><dd>@Display(preview.Nuyen)</dd>
+                <dt>Erschaffungspunkte</dt><dd>@Display(preview.BuildPoints)</dd>
+            </dl>
+            <button class="btn btn-primary" @onclick="SaveAsync" disabled="@saving">
+                @(saving ? "Wird gespeichert …" : "Import bestätigen")
+            </button>
+            <a class="btn btn-outline-secondary" href="/characters">Abbrechen</a>
+        </section>
+    }
+</section>
+
+@code {
+    private ChumImportPreview? preview;
+    private string? statusMessage;
+    private bool saving;
+
+    private async Task PreviewFileAsync(InputFileChangeEventArgs args)
+    {
+        preview = null;
+        statusMessage = null;
+        var file = args.File;
+        if (file.Size > ChumImportService.MaximumFileSizeBytes)
+        {
+            statusMessage = ChumImportService.MaximumSizeMessage;
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(ChumImportService.MaximumFileSizeBytes);
+            preview = await ImportService.PreviewAsync(file.Name, stream);
+        }
+        catch (ChumImportException exception)
+        {
+            statusMessage = exception.Message;
+        }
+        catch (InvalidOperationException)
+        {
+            statusMessage = ChumImportService.MaximumSizeMessage;
+        }
+        catch (IOException)
+        {
+            statusMessage = "Die ausgewählte Datei konnte nicht gelesen werden.";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (preview is null || saving)
+            return;
+
+        saving = true;
+        statusMessage = null;
+        try
+        {
+            await ImportService.SaveAsync(preview);
+            Navigation.NavigateTo("/characters");
+        }
+        catch (ChumImportException exception)
+        {
+            statusMessage = exception.Message;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            statusMessage = "Zum Import müssen Sie angemeldet sein.";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string Display(int? value) => value?.ToString() ?? "—";
+}

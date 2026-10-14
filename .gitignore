@@ -49,3 +49,11 @@
 *.svclog
 *.scc
 
+
+### ChummerGen web migration ###
+ChummerGen.*/bin/
+ChummerGen.*/obj/
+*.chum
+*.db
+*.db-shm
+*.db-wal

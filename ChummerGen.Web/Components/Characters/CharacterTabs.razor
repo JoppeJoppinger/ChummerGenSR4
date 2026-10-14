@@ -1,0 +1,55 @@
+<nav class="character-tabs" role="tablist" aria-label="Charakterbereiche">
+    @foreach (var tab in Tabs)
+    {
+        <button id="tab-@tab.Key" class="@(selectedTab == tab.Key ? "selected" : null)" role="tab"
+                aria-selected="@(selectedTab == tab.Key)" aria-controls="character-tab-content"
+                @onclick="() => selectedTab = tab.Key">@tab.Label</button>
+    }
+</nav>
+<section id="character-tab-content" class="character-tab-content" role="tabpanel" aria-labelledby="tab-@selectedTab">
+    @switch (selectedTab)
+    {
+        case "info": @Info; break;
+        case "attributes": @Attributes; break;
+        case "skills": @Skills; break;
+        case "gear": @Gear; break;
+        case "cyberware": @Cyberware; break;
+        case "qualities": @Qualities; break;
+        case "career": @Career; break;
+        case "critters": @Critters; break;
+        case "export": @Export; break;
+    }
+</section>
+
+@code {
+    [Inject] private IChummerLocalizationAccessor Localization { get; set; } = default!;
+
+    [Parameter] public RenderFragment? Info { get; set; }
+    [Parameter] public RenderFragment? Attributes { get; set; }
+    [Parameter] public RenderFragment? Skills { get; set; }
+    [Parameter] public RenderFragment? Gear { get; set; }
+    [Parameter] public RenderFragment? Cyberware { get; set; }
+    [Parameter] public RenderFragment? Qualities { get; set; }
+    [Parameter] public RenderFragment? Career { get; set; }
+    [Parameter] public RenderFragment? Critters { get; set; }
+    [Parameter] public RenderFragment? Export { get; set; }
+
+    private string selectedTab = "info";
+    private (string Key, string Label)[] Tabs = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tabs =
+        [
+            ("info", await Localization.GetRequiredStringAsync("Tab_CharacterInfo")),
+            ("attributes", await Localization.GetRequiredStringAsync("Label_Attributes")),
+            ("skills", await Localization.GetRequiredStringAsync("Tab_Skills")),
+            ("gear", await Localization.GetRequiredStringAsync("Tab_Gear")),
+            ("cyberware", await Localization.GetRequiredStringAsync("Tab_Cyberware")),
+            ("qualities", await Localization.GetRequiredStringAsync("Label_Options_Qualities")),
+            ("career", await Localization.GetRequiredStringAsync("Title_CareerMode")),
+            ("critters", await Localization.GetRequiredStringAsync("Tab_Critter")),
+            ("export", await Localization.GetRequiredStringAsync("Menu_FileExport"))
+        ];
+    }
+}
