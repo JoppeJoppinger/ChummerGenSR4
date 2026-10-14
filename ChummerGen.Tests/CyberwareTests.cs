@@ -545,7 +545,8 @@ public sealed class CyberwareTests
                 int? variableCost = null;
                 if (entry.TryGetVariableCostRange(out var minC, out _))
                     variableCost = minC;
-                var result = manager.Add(source, entry.Name, "Standard", rating, variableCost: variableCost);
+                var result = manager.Add(source, entry.Name, "Standard", rating, variableCost: variableCost,
+                    side: manager.RequiresSide(entry) ? "Left" : null);
                 Assert.True(result.Success, $"{entry.Name}: {result.Error}");
                 var item = result.Item!;
                 var grades = manager.GradesFor(item);
@@ -594,8 +595,6 @@ public sealed class CyberwareTests
     }
 
     [Theory]
-    [InlineData("Obvious Full Arm", "conditionmonitor, selectside")]
-    [InlineData("Single Cybereye", "selectside")]
     [InlineData("Reflex Recorder (Skill)", "selectskill")]
     [InlineData("Reflex Recorder (Skill Group)", "selectskillgroup")]
     [InlineData("Enhanced Protein Exchange, Adapsin", "adapsin")]
@@ -1179,6 +1178,74 @@ public sealed class CyberwareTests
         Assert.Equal("2", Assert.Single(Own(), i => i.Element("improvementttype")!.Value == "Skillwire").Element("val")!.Value);
         Assert.True(manager.Remove(item.Guid).Success);
         Assert.Empty(Own());
+    }
+
+    [Theory]
+    [InlineData("Single Cybereye", CyberwareSource.Cyberware, 0)]
+    [InlineData("Obvious Full Arm", CyberwareSource.Cyberware, 1)]
+    [InlineData("Synthetic Full Arm", CyberwareSource.Cyberware, 1)]
+    public void SelectSideBonusStoresLocationAndKeepsPhysicalMonitorImprovement(string name, CyberwareSource source, int improvements)
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+
+        var session = NewSession();
+        var manager = new CyberwareManager(session, CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml"))));
+        var entry = manager.Catalog.Find(source, name)!;
+        Assert.True(manager.RequiresSide(entry));
+        Assert.Null(manager.GetAddBlocker(entry));
+
+        var before = session.Serialize();
+        Assert.False(manager.Add(source, name, "Standard", entry.Node.Element("rating") is null ? 0 : 1).Success);
+        Assert.Equal(before, session.Serialize());
+
+        var added = manager.Add(source, name, "Standard", entry.Node.Element("rating") is null ? 0 : 1, null, null, "Left");
+        Assert.True(added.Success, added.Error);
+        Assert.Equal("Left", added.Item!.Location);
+        Assert.Equal(improvements, session.Xml.Root!.Element("improvements")?.Elements("improvement")
+            .Count(i => i.Element("sourcename")?.Value == added.Item.Guid) ?? 0);
+        Assert.True(manager.Remove(added.Item.Guid).Success);
+    }
+
+    [Fact]
+    public void SuiteWithFullArmsNeedsOneSidePerArm()
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+
+        var session = NewSession();
+        var manager = new CyberwareManager(session, CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml")),
+            File.ReadAllText(Path.Combine(data, "weapons.xml"))));
+        var sided = manager.ListSuites(CyberwareSource.Cyberware)
+            .Where(s => s.Blocker is null && manager.CountSuiteSides(s) > 0).ToList();
+        Assert.NotEmpty(sided);
+
+        var successes = 0;
+        foreach (var suite in sided)
+        {
+            var needed = manager.CountSuiteSides(suite);
+            var before = session.Serialize();
+            Assert.False(manager.ApplySuite(CyberwareSource.Cyberware, suite.Name).Success);
+            Assert.False(manager.ApplySuite(CyberwareSource.Cyberware, suite.Name, Enumerable.Repeat("Left", needed + 1).ToList()).Success);
+            Assert.Equal(before, session.Serialize());
+
+            var applied = manager.ApplySuite(CyberwareSource.Cyberware, suite.Name, Enumerable.Repeat("Right", needed).ToList());
+            if (applied.Success)
+            {
+                successes++;
+                Assert.Contains(session.Xml.Root!.Element("cyberwares")!.Descendants("cyberware"),
+                    c => c.Element("location")?.Value == "Right");
+            }
+            else
+                Assert.Equal(before, session.Serialize());
+        }
+        Assert.True(successes > 0);
     }
 
     [Theory]

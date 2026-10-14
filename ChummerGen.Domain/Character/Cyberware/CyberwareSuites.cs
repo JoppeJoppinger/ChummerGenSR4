@@ -43,8 +43,14 @@ public sealed partial class CyberwareManager
         _ => "Standard"
     };
 
+    public int CountSuiteSides(CyberwareSuite suite) => CountSuiteSides(suite.Source, suite.Items);
+
+    private int CountSuiteSides(CyberwareSource source, IReadOnlyList<CyberwareSuiteItem> items) =>
+        items.Sum(i => (Catalog.Find(source, i.Name) is { } entry && RequiresSide(entry) ? 1 : 0) + CountSuiteSides(source, i.Children));
+
     // All-or-nothing: the suite is built on a clone of the document and only appended to the real one when every piece succeeded.
-    public CyberwareOperationResult ApplySuite(CyberwareSource source, string suiteName)
+    // Sides are consumed in suite order by every piece that needs one.
+    public CyberwareOperationResult ApplySuite(CyberwareSource source, string suiteName, IReadOnlyList<string>? sides = null)
     {
         var root = _session.Xml.Root;
         if (root is null)
@@ -54,6 +60,10 @@ public sealed partial class CyberwareManager
             return CyberwareOperationResult.Fail($"Die Suite '{suiteName}' ist nicht im Katalog vorhanden.");
         if (suite.Blocker is not null)
             return CyberwareOperationResult.Fail(suite.Blocker);
+        var needed = CountSuiteSides(suite);
+        if ((sides?.Count ?? 0) != needed)
+            return CyberwareOperationResult.Fail($"Suite '{suite.Name}': Es müssen {needed} Seite(n) gewählt werden.");
+        var sideQueue = new Queue<string>(sides ?? []);
 
         var staged = new CharacterSession(new ChumDocument(new XDocument(_session.Xml)), _session.Settings);
         var stagedManager = new CyberwareManager(staged, Catalog);
@@ -63,7 +73,7 @@ public sealed partial class CyberwareManager
 
         foreach (var item in suite.Items)
         {
-            var error = stagedManager.AddSuiteItem(suite, source, item, null);
+            var error = stagedManager.AddSuiteItem(suite, source, item, null, sideQueue);
             if (error is not null)
                 return CyberwareOperationResult.Fail($"Suite '{suite.Name}': {error}");
         }
@@ -94,16 +104,17 @@ public sealed partial class CyberwareManager
         return CyberwareOperationResult.Ok();
     }
 
-    private string? AddSuiteItem(CyberwareSuite suite, CyberwareSource source, CyberwareSuiteItem item, string? parentGuid)
+    private string? AddSuiteItem(CyberwareSuite suite, CyberwareSource source, CyberwareSuiteItem item, string? parentGuid, Queue<string> sides)
     {
-        var result = Add(source, item.Name, suite.GradeName, item.Rating, parentGuid);
+        var needsSide = Catalog.Find(source, item.Name) is { } sideEntry && RequiresSide(sideEntry);
+        var result = Add(source, item.Name, suite.GradeName, item.Rating, parentGuid, null, needsSide ? sides.Dequeue() : null);
         if (!result.Success)
             return $"'{item.Name}': {result.Error}";
         // Legacy marks every suite piece, including plugins, as Suite (0.9 cost, -0.1 essence multiplier).
         result.Item!.Element.Element("suite")!.Value = "True";
         foreach (var child in item.Children)
         {
-            var error = AddSuiteItem(suite, source, child, result.Item.Guid);
+            var error = AddSuiteItem(suite, source, child, result.Item.Guid, sides);
             if (error is not null)
                 return error;
         }

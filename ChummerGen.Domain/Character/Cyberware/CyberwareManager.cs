@@ -101,7 +101,8 @@ public sealed partial class CyberwareManager
         string gradeName,
         int rating,
         string? parentGuid = null,
-        int? variableCost = null)
+        int? variableCost = null,
+        string? side = null)
     {
         var root = _session.Xml.Root;
         if (root is null)
@@ -157,8 +158,13 @@ public sealed partial class CyberwareManager
             rating = 0;
         }
 
-        var item = BuildElement(entry, grade, rating, minRating, maxRating, source, chosenCost);
+        var requiresSide = RequiresSide(entry);
+        if (requiresSide && string.IsNullOrWhiteSpace(side))
+            return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Auswahl einer Seite (links/rechts).");
 
+        var item = BuildElement(entry, grade, rating, minRating, maxRating, source, chosenCost);
+        if (requiresSide)
+            item.Element("location")!.Value = side!.Trim();
         if (parent is not null)
         {
             var parentError = ValidatePlugin(parent, entry, new CyberwareItem(item));
@@ -382,7 +388,9 @@ public sealed partial class CyberwareManager
             new XElement("rating", rating.ToString(CultureInfo.InvariantCulture)),
             new XElement("minrating", minRating.ToString(CultureInfo.InvariantCulture)),
             new XElement("maxrating", maxRating.ToString(CultureInfo.InvariantCulture)),
-            new XElement("subsystems", Text("subsystems")),
+            new XElement("subsystems", node.Element("subsystems") is { } subs && subs.HasElements
+                ? string.Join(",", subs.Elements("subsystem").Select(s => s.Value.Trim()))
+                : Text("subsystems")),
             new XElement("grade", grade),
             new XElement("location"),
             new XElement("suite", "False"),

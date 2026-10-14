@@ -75,6 +75,13 @@ public sealed partial class CyberwareManager
         return true;
     }
 
+    // Legacy <selectside/> creates no improvement; the chosen side only becomes the piece's location.
+    private static bool HasSelectSide(XElement? bonus) =>
+        bonus?.Elements("selectside").Any(e => !e.HasAttributes && !e.Nodes().Any()) == true;
+
+    public bool RequiresSide(CyberwareCatalogEntry entry) =>
+        entry.Node.Element("bonus") is { } bonus && HasSelectSide(bonus) && TryGetSimpleBonuses(bonus, 1, out _);
+
     // One or more supported tags in a single <bonus>; each tag must create a distinct improvement.
     private static bool TryGetSimpleBonuses(XElement? bonus, int rating, out IReadOnlyList<SimpleBonus> results)
     {
@@ -83,13 +90,18 @@ public sealed partial class CyberwareManager
             || bonus.Nodes().Any(n => n is not XElement)
             || bonus.Attributes().Any(a => a.Name.LocalName != "unique"))
             return false;
+        var elements = bonus.Elements().ToList();
+        if (elements.Count(e => e.Name.LocalName == "selectside") > 1
+            || elements.Any(e => e.Name.LocalName == "selectside" && (e.HasAttributes || e.Nodes().Any())))
+            return false;
+        elements.RemoveAll(e => e.Name.LocalName == "selectside");
         // Legacy iterates these tags as lists; every other tag is read once, so duplicates stay blocked.
-        if (bonus.Elements().GroupBy(e => e.Name.LocalName)
+        if (elements.GroupBy(e => e.Name.LocalName)
             .Any(g => g.Count() > 1 && g.Key is not ("specificattribute" or "specificskill" or "skillgroup" or "skillattribute" or "skillcategory")))
             return false;
         var bonusUnique = bonus.Attribute("unique")?.Value ?? string.Empty;
         var list = new List<SimpleBonus>();
-        foreach (var element in bonus.Elements())
+        foreach (var element in elements)
         {
             if (!TryGetSimpleBonusElement(element, bonusUnique, rating, out var single))
                 return false;
