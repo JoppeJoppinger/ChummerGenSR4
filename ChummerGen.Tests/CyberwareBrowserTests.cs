@@ -62,7 +62,6 @@ public sealed class CyberwareBrowserTests : PageTest
         var addPane = Page.Locator(".cyber-add-pane");
         var entryPicker = addPane.Locator("select").Nth(2);
         await Expect(entryPicker).ToContainTextAsync("Data Filter");
-        await Expect(entryPicker).ToContainTextAsync("Cranial Containment Unit");
         await entryPicker.SelectOptionAsync("Data Filter");
         await Page.GetByRole(AriaRole.Button, new() { Name = "Hinzufügen", Exact = true }).ClickAsync();
         var itemRow = Page.Locator(".cyber-table tbody tr").Filter(new() { HasText = "Data Filter" });
@@ -84,8 +83,9 @@ public sealed class CyberwareBrowserTests : PageTest
         await Page.Locator(".cyber-table tbody tr").Filter(new() { HasText = "Data Filter" }).ClickAsync();
         await Expect(Page.Locator(".cyber-detail-pane textarea")).ToHaveValueAsync(persistedNote);
 
+        await Page.Locator(".cyber-add-pane select").Nth(0).SelectOptionAsync("Bioware");
         var blockerPicker = Page.Locator(".cyber-add-pane select").Nth(2);
-        await blockerPicker.SelectOptionAsync("Cranial Containment Unit");
+        await blockerPicker.SelectOptionAsync("Reflex Recorder (Skill)");
         var blocker = Page.Locator(".cyber-add-pane .text-warning");
         await Expect(blocker).ToContainTextAsync("hat Boni");
         await Expect(blocker).ToContainTextAsync("noch nicht portiert");

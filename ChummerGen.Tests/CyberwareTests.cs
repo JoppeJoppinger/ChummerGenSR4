@@ -46,7 +46,7 @@ public sealed class CyberwareTests
             <cyberware>
               <name>Attention Coprocessor</name><category>Headware</category><rating>3</rating>
               <ess>0.3</ess><capacity>0</capacity><avail>8</avail><cost>Rating * 3000</cost>
-              <bonus><cyborgessence /></bonus>
+              <bonus><selectattribute /></bonus>
               <source>AU</source><page>36</page>
             </cyberware>
             <cyberware>
@@ -597,7 +597,6 @@ public sealed class CyberwareTests
     [Theory]
     [InlineData("Reflex Recorder (Skill)", "selectskill")]
     [InlineData("Reflex Recorder (Skill Group)", "selectskillgroup")]
-    [InlineData("Cranial Containment Unit", "conditionmonitor")]
     [InlineData("Genetic Optimization", "selectattribute")]
     public void UnsupportedBonusTypesFailClosedAccuratelyAndDoNotMutateXml(string itemName, string expectedBonusTags)
     {
@@ -1038,6 +1037,9 @@ public sealed class CyberwareTests
     [InlineData("Enhanced Protein Exchange, Adapsin", 1, "Adapsin", "adapsin", "0")]
     [InlineData("Enhanced Protein Exchange, Daredrenaline", 2, "DrainResistance", "", "1")]
     [InlineData("Mnemonic Enhancer (2050)", 5, "Memory", "", "2")]
+    [InlineData("Cranial Containment Unit", 3, "CyborgEssence", "", "0")]
+    [InlineData("Cranial Containment Unit", 3, "CMThresholdOffset", "", "6")]
+    [InlineData("Cranial Containment Unit", 3, "MatrixInitiativePass", "", "1")]
     public void MemoryDrainAdapsinMatchRealCatalog(string name, int count, string type, string unique, string value)
     {
         var data = FindDirectory(Path.Combine("bin", "data"));
@@ -1053,7 +1055,7 @@ public sealed class CyberwareTests
         var session = NewSession();
         var manager = new CyberwareManager(session, catalog);
         Assert.Null(manager.GetAddBlocker(entry));
-        var rating = entry.Node.Element("rating") is null ? 0 : 2;
+        var rating = entry.Node.Element("rating") is { } ratingNode ? Math.Min(2, int.Parse(ratingNode.Value)) : 0;
         var added = manager.Add(source, name, "Standard", rating);
         Assert.True(added.Success, added.Error);
         var linked = session.Xml.Root!.Element("improvements")!.Elements("improvement")
@@ -1435,7 +1437,7 @@ public sealed class CyberwareTests
                 <cyberware><name>Fixed Wire</name><category>Headware</category><rating>3</rating><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
                   <bonus><skillwire>FixedValues(2,4,5)</skillwire></bonus></cyberware>
                 <cyberware><name>Two Tags</name><category>Headware</category><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
-                  <bonus><smartlink /><cyborgessence /></bonus></cyberware>
+                  <bonus><smartlink /><selectattribute /></bonus></cyberware>
               </cyberwares>
             </chummer>
             """;

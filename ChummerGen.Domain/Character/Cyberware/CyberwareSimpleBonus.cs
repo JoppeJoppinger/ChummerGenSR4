@@ -171,13 +171,33 @@ public sealed partial class CyberwareManager
             return true;
         }
 
+        if (element.Name.LocalName == "cyborgessence")
+        {
+            if (element.HasAttributes || element.Nodes().Any())
+                return false;
+            result = new SimpleBonus("CyborgEssence", string.Empty, 0);
+            return true;
+        }
+
         if (element.Name.LocalName == "conditionmonitor")
         {
             if (element.HasAttributes || element.Nodes().Count() != 1
-                || element.Element("physical") is not { HasAttributes: false, HasElements: false } physical
-                || !TryEvaluateSimpleBonusValue(physical.Value, rating, out var physicalValue))
+                || element.Elements().SingleOrDefault() is not { HasElements: false } child
+                || child.Name.LocalName is not ("physical" or "stun" or "threshold" or "thresholdoffset" or "overflow")
+                || child.Attributes().Any(a => a.Name.LocalName != "precedence"
+                    || child.Name.LocalName is not ("threshold" or "thresholdoffset"))
+                || !TryEvaluateSimpleBonusValue(child.Value, rating, out var monitorValue))
                 return false;
-            result = new SimpleBonus("PhysicalCM", bonusUnique, physicalValue);
+            var monitorUnique = child.Attribute("precedence") is { } cmPrecedence ? "precedence" + cmPrecedence.Value : bonusUnique;
+            var monitorType = child.Name.LocalName switch
+            {
+                "physical" => "PhysicalCM",
+                "stun" => "StunCM",
+                "threshold" => "CMThreshold",
+                "thresholdoffset" => "CMThresholdOffset",
+                _ => "CMOverflow"
+            };
+            result = new SimpleBonus(monitorType, monitorUnique, monitorValue);
             return true;
         }
 
@@ -209,6 +229,9 @@ public sealed partial class CyberwareManager
                 return true;
             case "matrixinitiativepass":
                 result = new SimpleBonus("MatrixInitiativePass", "matrixinitiativepass", value);
+                return true;
+            case "matrixinitiativepassadd":
+                result = new SimpleBonus("MatrixInitiativePass", bonusUnique, value);
                 return true;
             case "initiativepass":
                 result = new SimpleBonus("InitiativePass", "initiativepass", value);
