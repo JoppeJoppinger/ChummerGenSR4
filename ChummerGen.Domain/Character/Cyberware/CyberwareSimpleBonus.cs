@@ -83,7 +83,9 @@ public sealed partial class CyberwareManager
             || bonus.Nodes().Any(n => n is not XElement)
             || bonus.Attributes().Any(a => a.Name.LocalName != "unique"))
             return false;
-        if (bonus.Elements().GroupBy(e => e.Name.LocalName).Any(g => g.Count() > 1))
+        // Legacy iterates these tags as lists; every other tag is read once, so duplicates stay blocked.
+        if (bonus.Elements().GroupBy(e => e.Name.LocalName)
+            .Any(g => g.Count() > 1 && g.Key is not ("specificattribute" or "specificskill" or "skillgroup" or "skillattribute" or "skillcategory")))
             return false;
         var bonusUnique = bonus.Attribute("unique")?.Value ?? string.Empty;
         var list = new List<SimpleBonus>();

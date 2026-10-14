@@ -598,10 +598,8 @@ public sealed class CyberwareTests
     [InlineData("Single Cybereye", "selectside")]
     [InlineData("Reflex Recorder (Skill)", "selectskill")]
     [InlineData("Reflex Recorder (Skill Group)", "selectskillgroup")]
-    [InlineData("Mnemonic Enhancer", "skillcategory")]
     [InlineData("Enhanced Protein Exchange, Adapsin", "adapsin")]
     [InlineData("Cranial Containment Unit", "conditionmonitor")]
-    [InlineData("Suprathyroid Gland", "specificattribute")]
     [InlineData("Chemical Gland", "selecttext")]
     [InlineData("Genetic Optimization", "selectattribute")]
     public void UnsupportedBonusTypesFailClosedAccuratelyAndDoNotMutateXml(string itemName, string expectedBonusTags)
@@ -1118,8 +1116,12 @@ public sealed class CyberwareTests
 
         var before = session.Serialize();
         Assert.False(manager.Add(CyberwareSource.Cyberware, "With Max", "Standard", 0).Success);
-        Assert.False(manager.Add(CyberwareSource.Cyberware, "Two Skills", "Standard", 0).Success);
         Assert.Equal(before, session.Serialize());
+
+        var two = manager.Add(CyberwareSource.Cyberware, "Two Skills", "Standard", 0);
+        Assert.True(two.Success, two.Error);
+        Assert.Equal(2, session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Count(i => i.Element("sourcename")?.Value == two.Item!.Guid));
 
         var applied = manager.Add(CyberwareSource.Cyberware, "Applied", "Standard", 0);
         Assert.True(applied.Success, applied.Error);
@@ -1426,6 +1428,37 @@ public sealed class CyberwareTests
         CyberwareCatalogXml.Replace("</cyberwares>", LinkedWeaponEntries + "</cyberwares>").Replace("</chummer>", CyberwareSuitesXml + "</chummer>"),
         BiowareCatalogXml.Replace("</chummer>", BiowareSuitesXml + "</chummer>"),
         WeaponsXml);
+
+    [Theory]
+    [InlineData(CyberwareSource.Cyberware, "Muscle Replacement", 2, 2)]
+    [InlineData(CyberwareSource.Cyberware, "Encephalon Rating 2", 0, 3)]
+    [InlineData(CyberwareSource.Bioware, "Suprathyroid Gland", 0, 4)]
+    [InlineData(CyberwareSource.Bioware, "Mnemonic Enhancer", 2, 4)]
+    public void RepeatedListTagsMatchRealCatalog(CyberwareSource source, string name, int rating, int count)
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+
+        var session = NewSession();
+        var manager = new CyberwareManager(session, CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml"))));
+        var added = manager.Add(source, name, "Standard", rating);
+        Assert.True(added.Success, added.Error);
+        var item = added.Item!;
+        List<XElement> Own() => session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Where(i => i.Element("sourcename")?.Value == item.Guid).ToList();
+        Assert.Equal(count, Own().Count);
+        if (rating > 0)
+        {
+            Assert.True(manager.SetRating(item, 3).Success);
+            Assert.All(Own(), i => Assert.Equal("3", i.Element(i.Element("improvementttype")!.Value == "Attribute" ? "aug" : "val")!.Value));
+        }
+
+        Assert.True(manager.Remove(item.Guid).Success);
+        Assert.Empty(Own());
+    }
 
     [Fact]
     public void ListSuitesReturnsParsedSuitesWithResolvedGradeAndBlockers()
