@@ -75,7 +75,7 @@ public sealed partial class CyberwareManager
                 && !IsArmorImprovement(i) && !IsDamageResistanceImprovement(i)
                 && !IsBoneDensityUnarmedImprovement(i, "UnarmedDV") && !IsBoneDensityUnarmedImprovement(i, "UnarmedDVPhysical")
                 && !IsMatrixInitiativePassImprovement(i)
-                && !(TryGetSimpleBonus(piece.Bonus, piece.Rating, out var simpleOwn) && IsSimpleBonusImprovement(i, simpleOwn))
+                && !(TryGetSimpleBonuses(piece.Bonus, piece.Rating, out var simpleOwn) && IsAnySimpleBonusImprovement(i, simpleOwn))
                 && !IsMatrixInitiativePassAddImprovement(i, piece.Bonus?.Attribute("unique")?.Value ?? string.Empty)))
                 return false;
             var attribute = piece.Bonus is null ? null : GetEnableAttribute(piece.Bonus);
@@ -88,7 +88,7 @@ public sealed partial class CyberwareManager
             var boneDensity = piece.Bonus is not null && TryGetBoneDensityBonusValues(piece.Bonus, piece.Rating, out _, out _);
             var matrixPass = piece.Bonus is not null && TryGetMatrixInitiativePassValue(piece.Bonus, piece.Rating, out _);
             var matrixPassAdd = piece.Bonus is not null && TryGetMatrixInitiativePassAddValue(piece.Bonus, piece.Rating, out _);
-            var simpleBonus = piece.Bonus is not null && TryGetSimpleBonus(piece.Bonus, piece.Rating, out _);
+            var simpleBonus = piece.Bonus is not null && TryGetSimpleBonuses(piece.Bonus, piece.Rating, out _);
             if (piece.Bonus is not null && attribute is null && !thresholdOffset && !armorBonus && !damageResistance && !matrixPass && !matrixPassAdd && !simpleBonus)
                 return false;
             if (simpleBonus && !RatingChangeKeepsSimpleBonus(piece, own))

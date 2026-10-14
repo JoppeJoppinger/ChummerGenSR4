@@ -8,7 +8,7 @@ namespace ChummerGen.Domain.Character.Cyberware;
 // Port of the expression handling in legacy Cyberware (Rating substitution, FixedValues(...), XPath arithmetic).
 internal static class CyberwareExpression
 {
-    private static readonly Regex SafeArithmetic = new(@"^[0-9+\-*.() \t]+$", RegexOptions.Compiled);
+    private static readonly Regex SafeArithmetic = new(@"^([0-9+\-*.() \t]|div)+$", RegexOptions.Compiled);
 
     public static bool IsFixedValues(string expression) =>
         expression.StartsWith("FixedValues", StringComparison.Ordinal);

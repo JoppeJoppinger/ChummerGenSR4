@@ -83,7 +83,7 @@ public sealed partial class CyberwareManager
     {
         if (GetEnableAttribute(bonus) is not null || HasRatingThresholdOffsetBonus(bonus))
             return true;
-        if (TryGetMatrixInitiativePassValue(bonus, rating, out _) || TryGetSimpleBonus(bonus, rating, out _))
+        if (TryGetMatrixInitiativePassValue(bonus, rating, out _) || TryGetSimpleBonuses(bonus, rating, out _))
             return true;
         if (TryGetMatrixInitiativePassAddValue(bonus, rating, out _))
             return true;
@@ -195,8 +195,8 @@ public sealed partial class CyberwareManager
             }
             else if (TryGetDamageResistanceBonusValue(item.Element("bonus"), rating, out var parentDamageResistance))
                 ApplyDamageResistanceBonus(item, parentDamageResistance);
-            else if (TryGetSimpleBonus(item.Element("bonus"), rating, out var parentSimple))
-                ApplySimpleBonus(item, parentSimple);
+            else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var parentSimple))
+                ApplySimpleBonuses(item, parentSimple);
             children.Add(item);
             return CyberwareOperationResult.Ok(Find(item.Element("guid")!.Value));
         }
@@ -231,8 +231,8 @@ public sealed partial class CyberwareManager
         }
         else if (TryGetDamageResistanceBonusValue(item.Element("bonus"), rating, out var resistance))
             ApplyDamageResistanceBonus(item, resistance);
-        else if (TryGetSimpleBonus(item.Element("bonus"), rating, out var simple))
-            ApplySimpleBonus(item, simple);
+        else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var simple))
+            ApplySimpleBonuses(item, simple);
         container.Add(item);
         return CyberwareOperationResult.Ok(Find(item.Element("guid")!.Value));
     }
@@ -392,7 +392,7 @@ public sealed partial class CyberwareManager
                 && (GetEnableAttribute(bonus) is not null
                     || HasRatingThresholdOffsetBonus(bonus)
                     || TryGetMatrixInitiativePassValue(bonus, rating, out _)
-                    || TryGetSimpleBonus(bonus, rating, out _)
+                    || TryGetSimpleBonuses(bonus, rating, out _)
                     || TryGetMatrixInitiativePassAddValue(bonus, rating, out _)
                     || TryGetArmorBonusValues(bonus, rating, out _)
                     || TryGetDamageResistanceBonusValue(bonus, rating, out _)

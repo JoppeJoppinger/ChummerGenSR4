@@ -595,11 +595,9 @@ public sealed class CyberwareTests
 
     [Theory]
     [InlineData("Obvious Full Arm", "conditionmonitor, selectside")]
-    [InlineData("Wired Reflexes", "initiativepass, specificattribute")]
     [InlineData("Sim Module", "matrixinitiativepass, skillsoftaccess")]
     [InlineData("Datajack", "skillsoftaccess")]
     [InlineData("Single Cybereye", "selectside")]
-    [InlineData("Cyberfins", "specificskill, swimpercent")]
     [InlineData("Reflex Recorder (Skill)", "selectskill")]
     [InlineData("Reflex Recorder (Skill Group)", "selectskillgroup")]
     [InlineData("Mnemonic Enhancer", "skillcategory")]
@@ -1131,6 +1129,53 @@ public sealed class CyberwareTests
     }
 
     [Theory]
+    [InlineData("Wired Reflexes", 1, "1", "1")]
+    [InlineData("Wired Reflexes", 3, "3", "3")]
+    [InlineData("Boosted Reflexes", 1, "1", "0")]
+    [InlineData("Boosted Reflexes", 3, "3", "1")]
+    public void MultiTagReflexBonusesMatchRealCatalogAndRecalculate(string name, int rating, string first, string second)
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+
+        var session = NewSession();
+        var manager = new CyberwareManager(session, CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml"))));
+        var added = manager.Add(CyberwareSource.Cyberware, name, "Standard", rating);
+        Assert.True(added.Success, added.Error);
+        var item = added.Item!;
+        List<XElement> Own() => session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Where(i => i.Element("sourcename")?.Value == item.Guid).ToList();
+
+        var own = Own();
+        Assert.Equal(2, own.Count);
+        if (name == "Wired Reflexes")
+        {
+            Assert.Equal(first, own.Single(i => i.Element("improvementttype")!.Value == "InitiativePass").Element("val")!.Value);
+            var attribute = own.Single(i => i.Element("improvementttype")!.Value == "Attribute");
+            Assert.Equal("REA", attribute.Element("improvedname")!.Value);
+            Assert.Equal("precedence1", attribute.Element("unique")!.Value);
+            Assert.Equal(second, attribute.Element("aug")!.Value);
+        }
+        else
+        {
+            Assert.Equal(first, own.Single(i => i.Element("improvementttype")!.Value == "Initiative").Element("val")!.Value);
+            Assert.Equal(second, own.Single(i => i.Element("improvementttype")!.Value == "InitiativePass").Element("val")!.Value);
+        }
+
+        if (rating < 3)
+        {
+            Assert.True(manager.SetRating(item, 3).Success);
+            Assert.Equal(2, Own().Count);
+        }
+
+        Assert.True(manager.Remove(item.Guid).Success);
+        Assert.Empty(Own());
+    }
+
+    [Theory]
     [InlineData("<specificattribute><name>ESS</name><val>1</val></specificattribute>")]
     [InlineData("<specificattribute><name>AGI</name><val>1</val><max>2</max></specificattribute>")]
     [InlineData("<specificattribute><name>AGI</name><val>1</val><aug>1</aug></specificattribute>")]
@@ -1203,7 +1248,7 @@ public sealed class CyberwareTests
                 <cyberware><name>Fixed Wire</name><category>Headware</category><rating>3</rating><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
                   <bonus><skillwire>FixedValues(2,4,5)</skillwire></bonus></cyberware>
                 <cyberware><name>Two Tags</name><category>Headware</category><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
-                  <bonus><smartlink /><skillwire>1</skillwire></bonus></cyberware>
+                  <bonus><smartlink /><skillsoftaccess /></bonus></cyberware>
               </cyberwares>
             </chummer>
             """;

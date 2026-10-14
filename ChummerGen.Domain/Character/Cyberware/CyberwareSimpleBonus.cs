@@ -75,16 +75,43 @@ public sealed partial class CyberwareManager
         return true;
     }
 
-    private static bool TryGetSimpleBonus(XElement? bonus, int rating, out SimpleBonus result)
+    // One or more supported tags in a single <bonus>; each tag must create a distinct improvement.
+    private static bool TryGetSimpleBonuses(XElement? bonus, int rating, out IReadOnlyList<SimpleBonus> results)
     {
-        result = null!;
-        if (bonus is null || bonus.Elements().Count() != 1
-            || bonus.Nodes().Count() != 1)
+        results = [];
+        if (bonus is null || !bonus.HasElements
+            || bonus.Nodes().Any(n => n is not XElement)
+            || bonus.Attributes().Any(a => a.Name.LocalName != "unique"))
             return false;
-        if (bonus.Attributes().Any(a => a.Name.LocalName != "unique"))
+        if (bonus.Elements().GroupBy(e => e.Name.LocalName).Any(g => g.Count() > 1))
             return false;
         var bonusUnique = bonus.Attribute("unique")?.Value ?? string.Empty;
-        var element = bonus.Elements().Single();
+        var list = new List<SimpleBonus>();
+        foreach (var element in bonus.Elements())
+        {
+            if (!TryGetSimpleBonusElement(element, bonusUnique, rating, out var single))
+                return false;
+            list.Add(single);
+        }
+
+        if (list.Select(b => (b.Type, b.Unique, b.ImprovedName)).Distinct().Count() != list.Count)
+            return false;
+        results = list;
+        return true;
+    }
+
+    private static bool TryGetSimpleBonusElement(XElement element, string bonusUnique, int rating, out SimpleBonus result)
+    {
+        result = null!;
+        // Legacy ignores the precedence attribute on <initiative>; the improvement uses the bonus unique.
+        if (element.Name.LocalName == "initiative" && !element.HasElements
+            && element.Attributes().All(a => a.Name.LocalName == "precedence")
+            && element.Nodes().Count() == 1
+            && TryEvaluateSimpleBonusValue(element.Value, rating, out var initiativeValue))
+        {
+            result = new SimpleBonus("Initiative", bonusUnique, initiativeValue);
+            return true;
+        }
 
         if (element.Name.LocalName is "specificskill" or "skillgroup" or "skillattribute" or "skillcategory")
             return TryGetSkillBonus(element, bonusUnique, rating, out result);
@@ -161,12 +188,21 @@ public sealed partial class CyberwareManager
         return true;
     }
 
+    private static bool IsAnySimpleBonusImprovement(XElement improvement, IReadOnlyList<SimpleBonus> bonuses) =>
+        bonuses.Any(b => IsSimpleBonusImprovement(improvement, b));
+
     private static bool IsSimpleBonusImprovement(XElement improvement, SimpleBonus bonus) =>
         improvement.Element("unique")?.Value == bonus.Unique
         && improvement.Element("improvedname")?.Value == bonus.ImprovedName
         && improvement.Element("improvementttype")?.Value == bonus.Type
         && improvement.Element("improvementsource")?.Value is "Cyberware" or "Bioware"
         && int.TryParse(improvement.Element(bonus.ValueElement)?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+
+    private void ApplySimpleBonuses(XElement cyberware, IReadOnlyList<SimpleBonus> bonuses)
+    {
+        foreach (var bonus in bonuses)
+            ApplySimpleBonus(cyberware, bonus);
+    }
 
     private void ApplySimpleBonus(XElement cyberware, SimpleBonus bonus)
     {
@@ -188,16 +224,19 @@ public sealed partial class CyberwareManager
 
     private void UpdateSimpleBonus(CyberwareItem item)
     {
-        if (!TryGetSimpleBonus(item.Bonus, item.Rating, out var bonus))
+        if (!TryGetSimpleBonuses(item.Bonus, item.Rating, out var bonuses))
             return;
-        var matching = _session.Xml.Root?.Element("improvements")?.Elements("improvement")
-            .Where(i => string.Equals(i.Element("sourcename")?.Value, item.Guid, StringComparison.OrdinalIgnoreCase)
-                && IsSimpleBonusImprovement(i, bonus)).ToList() ?? [];
-        if (matching.Count == 1)
-            matching[0].Element(bonus.ValueElement)!.Value = bonus.Value.ToString(CultureInfo.InvariantCulture);
+        foreach (var bonus in bonuses)
+        {
+            var matching = _session.Xml.Root?.Element("improvements")?.Elements("improvement")
+                .Where(i => string.Equals(i.Element("sourcename")?.Value, item.Guid, StringComparison.OrdinalIgnoreCase)
+                    && IsSimpleBonusImprovement(i, bonus)).ToList() ?? [];
+            if (matching.Count == 1)
+                matching[0].Element(bonus.ValueElement)!.Value = bonus.Value.ToString(CultureInfo.InvariantCulture);
+        }
     }
 
     private static bool RatingChangeKeepsSimpleBonus(CyberwareItem item, IReadOnlyCollection<XElement> own) =>
-        TryGetSimpleBonus(item.Bonus, item.Rating, out var bonus)
-        && own.Count(i => IsSimpleBonusImprovement(i, bonus)) == 1;
+        TryGetSimpleBonuses(item.Bonus, item.Rating, out var bonuses)
+        && bonuses.All(b => own.Count(i => IsSimpleBonusImprovement(i, b)) == 1);
 }
