@@ -128,6 +128,13 @@ public sealed partial class CyberwareManager
             result = new SimpleBonus("EnhancedArticulation", bonusUnique, articulationValue);
             return true;
         }
+        if (element.Name.LocalName == "skillsoftaccess")
+        {
+            if (element.HasAttributes || element.Nodes().Any())
+                return false;
+            result = new SimpleBonus("SkillsoftAccess", string.Empty, 0);
+            return true;
+        }
         if (element.Name.LocalName == "smartlink")
         {
             if (element.HasAttributes || element.Nodes().Any())

@@ -46,7 +46,7 @@ public sealed class CyberwareTests
             <cyberware>
               <name>Attention Coprocessor</name><category>Headware</category><rating>3</rating>
               <ess>0.3</ess><capacity>0</capacity><avail>8</avail><cost>Rating * 3000</cost>
-              <bonus><skillsoftaccess /></bonus>
+              <bonus><adapsin /></bonus>
               <source>AU</source><page>36</page>
             </cyberware>
             <cyberware>
@@ -596,7 +596,6 @@ public sealed class CyberwareTests
     [Theory]
     [InlineData("Obvious Full Arm", "conditionmonitor, selectside")]
     [InlineData("Sim Module", "matrixinitiativepass, skillsoftaccess")]
-    [InlineData("Datajack", "skillsoftaccess")]
     [InlineData("Single Cybereye", "selectside")]
     [InlineData("Reflex Recorder (Skill)", "selectskill")]
     [InlineData("Reflex Recorder (Skill Group)", "selectskillgroup")]
@@ -1050,6 +1049,7 @@ public sealed class CyberwareTests
 
     [Theory]
     [InlineData(CyberwareSource.Cyberware, "Orientation System", "Skill", "Navigation", "", "2", 0)]
+    [InlineData(CyberwareSource.Cyberware, "Datajack", "SkillsoftAccess", "", "", "0", 0)]
     [InlineData(CyberwareSource.Cyberware, "Attention Coprocessor", "Skill", "Perception", "", "2", 2)]
     [InlineData(CyberwareSource.Cyberware, "Encephalon Rating 1", "SkillAttribute", "LOG", "", "1", 0)]
     [InlineData(CyberwareSource.Bioware, "False Front", "Skill", "Disguise", "precedence2", "2", 2)]
@@ -1275,7 +1275,7 @@ public sealed class CyberwareTests
                 <cyberware><name>Fixed Wire</name><category>Headware</category><rating>3</rating><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
                   <bonus><skillwire>FixedValues(2,4,5)</skillwire></bonus></cyberware>
                 <cyberware><name>Two Tags</name><category>Headware</category><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
-                  <bonus><smartlink /><skillsoftaccess /></bonus></cyberware>
+                  <bonus><smartlink /><adapsin /></bonus></cyberware>
               </cyberwares>
             </chummer>
             """;
