@@ -46,7 +46,7 @@ public sealed class CyberwareTests
             <cyberware>
               <name>Attention Coprocessor</name><category>Headware</category><rating>3</rating>
               <ess>0.3</ess><capacity>0</capacity><avail>8</avail><cost>Rating * 3000</cost>
-              <bonus><selecttext /></bonus>
+              <bonus><cyborgessence /></bonus>
               <source>AU</source><page>36</page>
             </cyberware>
             <cyberware>
@@ -546,7 +546,7 @@ public sealed class CyberwareTests
                 if (entry.TryGetVariableCostRange(out var minC, out _))
                     variableCost = minC;
                 var result = manager.Add(source, entry.Name, "Standard", rating, variableCost: variableCost,
-                    side: manager.RequiresSide(entry) ? "Left" : null);
+                    side: manager.RequiresSide(entry) ? "Left" : manager.RequiresText(entry) ? "Text" : null);
                 Assert.True(result.Success, $"{entry.Name}: {result.Error}");
                 var item = result.Item!;
                 var grades = manager.GradesFor(item);
@@ -598,7 +598,6 @@ public sealed class CyberwareTests
     [InlineData("Reflex Recorder (Skill)", "selectskill")]
     [InlineData("Reflex Recorder (Skill Group)", "selectskillgroup")]
     [InlineData("Cranial Containment Unit", "conditionmonitor")]
-    [InlineData("Chemical Gland", "selecttext")]
     [InlineData("Genetic Optimization", "selectattribute")]
     public void UnsupportedBonusTypesFailClosedAccuratelyAndDoNotMutateXml(string itemName, string expectedBonusTags)
     {
@@ -996,6 +995,43 @@ public sealed class CyberwareTests
         Assert.True(manager.Remove(item.Guid).Success);
         Assert.DoesNotContain(session.Xml.Root!.Element("improvements")!.Elements("improvement"),
             i => i.Element("sourcename")?.Value == item.Guid);
+    }
+
+    [Theory]
+    [InlineData("Organ (Type O)", CyberwareSource.Bioware)]
+    [InlineData("Hand", CyberwareSource.Bioware)]
+    [InlineData("Skin (Cultured)", CyberwareSource.Bioware)]
+    public void SelectTextStoresTextImprovementAndLocation(string name, CyberwareSource source)
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+
+        var catalog = CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml")),
+            File.ReadAllText(Path.Combine(data, "weapons.xml")));
+        var session = NewSession();
+        var manager = new CyberwareManager(session, catalog);
+        var entry = catalog.Find(source, name)!;
+        Assert.True(manager.RequiresText(entry));
+        Assert.False(manager.RequiresSide(entry));
+
+        var before = session.Serialize();
+        Assert.False(manager.Add(source, name, "Standard", 0).Success);
+        Assert.False(manager.Add(source, name, "Standard", 0, null, null, "  ").Success);
+        Assert.Equal(before, session.Serialize());
+
+        var added = manager.Add(source, name, "Standard", 0, null, null, " Pollen ");
+        Assert.True(added.Success, added.Error);
+        Assert.Equal("Pollen", added.Item!.Location);
+        var improvement = Assert.Single(session.Xml.Root!.Element("improvements")!.Elements("improvement"),
+            i => i.Element("sourcename")?.Value == added.Item.Guid);
+        Assert.Equal("Text", improvement.Element("improvementttype")!.Value);
+        Assert.Equal("Pollen", improvement.Element("improvedname")!.Value);
+        var guid = added.Item.Guid;
+        Assert.True(manager.Remove(guid).Success);
+        Assert.DoesNotContain(session.Xml.Root!.Element("improvements")!.Elements("improvement"), i => i.Element("sourcename")?.Value == guid);
     }
 
     [Theory]
@@ -1399,7 +1435,7 @@ public sealed class CyberwareTests
                 <cyberware><name>Fixed Wire</name><category>Headware</category><rating>3</rating><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
                   <bonus><skillwire>FixedValues(2,4,5)</skillwire></bonus></cyberware>
                 <cyberware><name>Two Tags</name><category>Headware</category><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
-                  <bonus><smartlink /><selecttext /></bonus></cyberware>
+                  <bonus><smartlink /><cyborgessence /></bonus></cyberware>
               </cyberwares>
             </chummer>
             """;

@@ -193,6 +193,8 @@ public sealed partial class CyberwareManager
             return $"'{name}' ist nicht im Katalog vorhanden.";
         if (GetAddBlocker(entry) is { } blocker)
             return blocker;
+        if (RequiresText(entry))
+            return $"'{name}' erfordert eine Texteingabe; das wird für Suiten nicht unterstützt.";
         if (SuiteUnsupportedCatalogElements.FirstOrDefault(t => entry.Node.Element(t) is not null) is { } tag)
             return $"'{name}' enthält '{tag}' (Standard-Plugins/Auswahltext); das wird für Suiten nicht unterstützt.";
         if (entry.Cost.StartsWith("Variable", StringComparison.Ordinal))

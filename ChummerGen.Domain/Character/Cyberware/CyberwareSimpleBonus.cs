@@ -82,6 +82,13 @@ public sealed partial class CyberwareManager
     public bool RequiresSide(CyberwareCatalogEntry entry) =>
         entry.Node.Element("bonus") is { } bonus && HasSelectSide(bonus) && TryGetSimpleBonuses(bonus, 1, out _);
 
+    // Legacy <selecttext/> creates a Text improvement with the entered value, which also becomes the location.
+    private static bool HasSelectText(XElement? bonus) =>
+        bonus?.Elements("selecttext").Any(e => !e.HasAttributes && !e.Nodes().Any()) == true;
+
+    public bool RequiresText(CyberwareCatalogEntry entry) =>
+        entry.Node.Element("bonus") is { } bonus && HasSelectText(bonus) && TryGetSimpleBonuses(bonus, 1, out _);
+
     // One or more supported tags in a single <bonus>; each tag must create a distinct improvement.
     private static bool TryGetSimpleBonuses(XElement? bonus, int rating, out IReadOnlyList<SimpleBonus> results)
     {
@@ -91,10 +98,10 @@ public sealed partial class CyberwareManager
             || bonus.Attributes().Any(a => a.Name.LocalName != "unique"))
             return false;
         var elements = bonus.Elements().ToList();
-        if (elements.Count(e => e.Name.LocalName == "selectside") > 1
-            || elements.Any(e => e.Name.LocalName == "selectside" && (e.HasAttributes || e.Nodes().Any())))
+        if (elements.Count(e => e.Name.LocalName is "selectside" or "selecttext") > 1
+            || elements.Any(e => e.Name.LocalName is "selectside" or "selecttext" && (e.HasAttributes || e.Nodes().Any())))
             return false;
-        elements.RemoveAll(e => e.Name.LocalName == "selectside");
+        elements.RemoveAll(e => e.Name.LocalName is "selectside" or "selecttext");
         // Legacy iterates these tags as lists; every other tag is read once, so duplicates stay blocked.
         if (elements.GroupBy(e => e.Name.LocalName)
             .Any(g => g.Count() > 1 && g.Key is not ("specificattribute" or "specificskill" or "skillgroup" or "skillattribute" or "skillcategory")))

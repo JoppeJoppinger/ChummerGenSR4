@@ -199,6 +199,12 @@
                                    value="@addRating" @onchange="e => { addRating = int.TryParse(e.Value?.ToString(), out var r) ? r : 0; }" />
                         }
 
+                        @if (SelectedEntry is { } textEntry && Manager.RequiresText(textEntry))
+                        {
+                            <label>Text</label>
+                            <input class="form-control form-control-sm" value="@addSide" @oninput="e => { addSide = e.Value?.ToString() ?? string.Empty; }" />
+                        }
+
                         @if (SelectedEntry is { } sidedEntry && Manager.RequiresSide(sidedEntry))
                         {
                             <label>Seite</label>
@@ -214,7 +220,7 @@
                         <p class="text-warning small mt-2">@blocker</p>
                     }
                     <button type="button" class="btn btn-sm btn-primary mt-2" @onclick="AddSelected"
-                            disabled="@(SelectedEntry is null || Manager.GetAddBlocker(SelectedEntry) is not null || (Manager.RequiresSide(SelectedEntry) && addSide.Length == 0))">Hinzufügen</button>
+                            disabled="@(SelectedEntry is null || Manager.GetAddBlocker(SelectedEntry) is not null || (Manager.RequiresSide(SelectedEntry) || Manager.RequiresText(SelectedEntry)) && string.IsNullOrWhiteSpace(addSide))">Hinzufügen</button>
                 }
             </div>
         </div>

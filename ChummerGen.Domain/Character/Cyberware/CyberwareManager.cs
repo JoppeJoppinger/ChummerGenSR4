@@ -159,11 +159,14 @@ public sealed partial class CyberwareManager
         }
 
         var requiresSide = RequiresSide(entry);
+        var requiresText = RequiresText(entry);
         if (requiresSide && string.IsNullOrWhiteSpace(side))
             return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Auswahl einer Seite (links/rechts).");
+        if (requiresText && string.IsNullOrWhiteSpace(side))
+            return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Eingabe eines Textes.");
 
         var item = BuildElement(entry, grade, rating, minRating, maxRating, source, chosenCost);
-        if (requiresSide)
+        if (requiresSide || requiresText)
             item.Element("location")!.Value = side!.Trim();
         if (parent is not null)
         {
@@ -238,7 +241,11 @@ public sealed partial class CyberwareManager
         else if (TryGetDamageResistanceBonusValue(item.Element("bonus"), rating, out var resistance))
             ApplyDamageResistanceBonus(item, resistance);
         else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var simple))
+        {
+            if (requiresText)
+                ApplySimpleBonus(item, new SimpleBonus("Text", item.Element("bonus")?.Attribute("unique")?.Value ?? string.Empty, 0, side!.Trim()));
             ApplySimpleBonuses(item, simple);
+        }
         container.Add(item);
         return CyberwareOperationResult.Ok(Find(item.Element("guid")!.Value));
     }
