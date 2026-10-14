@@ -46,7 +46,7 @@ public sealed class CyberwareTests
             <cyberware>
               <name>Attention Coprocessor</name><category>Headware</category><rating>3</rating>
               <ess>0.3</ess><capacity>0</capacity><avail>8</avail><cost>Rating * 3000</cost>
-              <bonus><adapsin /></bonus>
+              <bonus><selecttext /></bonus>
               <source>AU</source><page>36</page>
             </cyberware>
             <cyberware>
@@ -597,7 +597,6 @@ public sealed class CyberwareTests
     [Theory]
     [InlineData("Reflex Recorder (Skill)", "selectskill")]
     [InlineData("Reflex Recorder (Skill Group)", "selectskillgroup")]
-    [InlineData("Enhanced Protein Exchange, Adapsin", "adapsin")]
     [InlineData("Cranial Containment Unit", "conditionmonitor")]
     [InlineData("Chemical Gland", "selecttext")]
     [InlineData("Genetic Optimization", "selectattribute")]
@@ -1000,6 +999,38 @@ public sealed class CyberwareTests
     }
 
     [Theory]
+    [InlineData("Enhanced Protein Exchange, Adapsin", 1, "Adapsin", "adapsin", "0")]
+    [InlineData("Enhanced Protein Exchange, Daredrenaline", 2, "DrainResistance", "", "1")]
+    [InlineData("Mnemonic Enhancer (2050)", 5, "Memory", "", "2")]
+    public void MemoryDrainAdapsinMatchRealCatalog(string name, int count, string type, string unique, string value)
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+
+        var catalog = CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml")),
+            File.ReadAllText(Path.Combine(data, "weapons.xml")));
+        var source = catalog.Entries(CyberwareSource.Bioware).Any(e => e.Name == name) ? CyberwareSource.Bioware : CyberwareSource.Cyberware;
+        var entry = Assert.Single(catalog.Entries(source), e => e.Name == name);
+        var session = NewSession();
+        var manager = new CyberwareManager(session, catalog);
+        Assert.Null(manager.GetAddBlocker(entry));
+        var rating = entry.Node.Element("rating") is null ? 0 : 2;
+        var added = manager.Add(source, name, "Standard", rating);
+        Assert.True(added.Success, added.Error);
+        var linked = session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Where(i => i.Element("sourcename")?.Value == added.Item!.Guid).ToList();
+        Assert.Equal(count, linked.Count);
+        var main = Assert.Single(linked, i => i.Element("improvementttype")!.Value == type);
+        Assert.Equal(unique, main.Element("unique")!.Value);
+        Assert.Equal(value, main.Element("val")!.Value);
+        var guid = added.Item!.Guid;
+        Assert.True(manager.Remove(guid).Success);
+        Assert.DoesNotContain(session.Xml.Root!.Element("improvements")!.Elements("improvement"), i => i.Element("sourcename")?.Value == guid);
+    }
+    [Theory]
     [InlineData(CyberwareSource.Cyberware, "Smartlink", "Smartlink", "smartlink", "0")]
     [InlineData(CyberwareSource.Cyberware, "Smartlink (2050)", "Smartlink", "smartlink", "0")]
     [InlineData(CyberwareSource.Cyberware, "Cyberskates", "MovementPercent", "", "25")]
@@ -1368,7 +1399,7 @@ public sealed class CyberwareTests
                 <cyberware><name>Fixed Wire</name><category>Headware</category><rating>3</rating><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
                   <bonus><skillwire>FixedValues(2,4,5)</skillwire></bonus></cyberware>
                 <cyberware><name>Two Tags</name><category>Headware</category><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>100</cost><source>SR4</source><page>1</page>
-                  <bonus><smartlink /><adapsin /></bonus></cyberware>
+                  <bonus><smartlink /><selecttext /></bonus></cyberware>
               </cyberwares>
             </chummer>
             """;

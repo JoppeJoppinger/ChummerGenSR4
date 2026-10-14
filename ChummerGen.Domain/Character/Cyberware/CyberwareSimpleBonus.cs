@@ -149,6 +149,13 @@ public sealed partial class CyberwareManager
             result = new SimpleBonus("SkillsoftAccess", string.Empty, 0);
             return true;
         }
+        if (element.Name.LocalName == "adapsin")
+        {
+            if (element.HasAttributes || element.Nodes().Any())
+                return false;
+            result = new SimpleBonus("Adapsin", "adapsin", 0);
+            return true;
+        }
         if (element.Name.LocalName == "smartlink")
         {
             if (element.HasAttributes || element.Nodes().Any())
@@ -177,6 +184,12 @@ public sealed partial class CyberwareManager
                 return true;
             case "swimpercent":
                 result = new SimpleBonus("SwimPercent", string.Empty, value);
+                return true;
+            case "memory":
+                result = new SimpleBonus("Memory", string.Empty, value);
+                return true;
+            case "drainresist":
+                result = new SimpleBonus("DrainResistance", string.Empty, value);
                 return true;
             case "skillwire":
                 result = new SimpleBonus("Skillwire", string.Empty, value);
