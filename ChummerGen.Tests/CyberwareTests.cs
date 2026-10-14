@@ -595,7 +595,6 @@ public sealed class CyberwareTests
 
     [Theory]
     [InlineData("Obvious Full Arm", "conditionmonitor, selectside")]
-    [InlineData("Sim Module", "matrixinitiativepass, skillsoftaccess")]
     [InlineData("Single Cybereye", "selectside")]
     [InlineData("Reflex Recorder (Skill)", "selectskill")]
     [InlineData("Reflex Recorder (Skill Group)", "selectskillgroup")]
@@ -1126,6 +1125,31 @@ public sealed class CyberwareTests
         Assert.True(applied.Success, applied.Error);
         Assert.Equal("True", Assert.Single(session.Xml.Root!.Element("improvements")!.Elements("improvement"),
             i => i.Element("sourcename")?.Value == applied.Item!.Guid).Element("addtorating")!.Value);
+    }
+
+    [Theory]
+    [InlineData("Sim Module", "1")]
+    [InlineData("Sim Module (Hot-Sim Modified)", "2")]
+    public void SimModuleCombinesMatrixPassAndSkillsoftAccess(string name, string pass)
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+
+        var session = NewSession();
+        var catalog = CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml")));
+        var manager = new CyberwareManager(session, catalog);
+        var added = manager.Add(CyberwareSource.Cyberware, name, "Standard", 0);
+        Assert.True(added.Success, added.Error);
+        var own = session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Where(i => i.Element("sourcename")?.Value == added.Item!.Guid).ToList();
+        Assert.Equal(pass, Assert.Single(own, i => i.Element("improvementttype")!.Value == "MatrixInitiativePass").Element("val")!.Value);
+        Assert.Single(own, i => i.Element("improvementttype")!.Value == "SkillsoftAccess");
+        Assert.True(manager.Remove(added.Item!.Guid).Success);
+        Assert.DoesNotContain(session.Xml.Root!.Element("improvements")!.Elements("improvement"),
+            i => i.Element("sourcename")?.Value == added.Item!.Guid);
     }
 
     [Theory]

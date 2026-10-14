@@ -173,6 +173,9 @@ public sealed partial class CyberwareManager
             case "initiative":
                 result = new SimpleBonus("Initiative", bonusUnique, value);
                 return true;
+            case "matrixinitiativepass":
+                result = new SimpleBonus("MatrixInitiativePass", "matrixinitiativepass", value);
+                return true;
             case "initiativepass":
                 result = new SimpleBonus("InitiativePass", "initiativepass", value);
                 return true;
