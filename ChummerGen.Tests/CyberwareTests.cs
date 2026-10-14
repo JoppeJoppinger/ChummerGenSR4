@@ -1129,6 +1129,33 @@ public sealed class CyberwareTests
     }
 
     [Theory]
+    [InlineData("Move-by-Wire System", 1, "2")]
+    [InlineData("Move-by-Wire System", 3, "5")]
+    [InlineData("Stirrup Interface", 2, "4")]
+    public void SkillwireFixedValuesMatchRealCatalogAndRecalculate(string name, int rating, string expected)
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+
+        var session = NewSession();
+        var manager = new CyberwareManager(session, CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml"))));
+        var added = manager.Add(CyberwareSource.Cyberware, name, "Standard", rating);
+        Assert.True(added.Success, added.Error);
+        var item = added.Item!;
+        List<XElement> Own() => session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Where(i => i.Element("sourcename")?.Value == item.Guid).ToList();
+
+        Assert.Equal(expected, Assert.Single(Own(), i => i.Element("improvementttype")!.Value == "Skillwire").Element("val")!.Value);
+        Assert.True(manager.SetRating(item, 1).Success);
+        Assert.Equal("2", Assert.Single(Own(), i => i.Element("improvementttype")!.Value == "Skillwire").Element("val")!.Value);
+        Assert.True(manager.Remove(item.Guid).Success);
+        Assert.Empty(Own());
+    }
+
+    [Theory]
     [InlineData("Wired Reflexes", 1, "1", "1")]
     [InlineData("Wired Reflexes", 3, "3", "3")]
     [InlineData("Boosted Reflexes", 1, "1", "0")]
@@ -1266,8 +1293,8 @@ public sealed class CyberwareTests
         Assert.True(manager.SetRating(item, 5).Success);
         Assert.Equal("5", improvement.Element("val")!.Value);
 
+        Assert.True(manager.Add(CyberwareSource.Cyberware, "Fixed Wire", "Standard", 1).Success);
         var before = session.Serialize();
-        Assert.False(manager.Add(CyberwareSource.Cyberware, "Fixed Wire", "Standard", 1).Success);
         Assert.False(manager.Add(CyberwareSource.Cyberware, "Two Tags", "Standard", 0).Success);
         Assert.Equal(before, session.Serialize());
     }

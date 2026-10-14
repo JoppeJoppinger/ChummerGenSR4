@@ -180,7 +180,7 @@ public sealed partial class CyberwareManager
         if (int.TryParse(expression, NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
             return true;
         value = 0;
-        if (!expression.Contains("Rating", StringComparison.Ordinal)
+        if (!(expression.Contains("Rating", StringComparison.Ordinal) || expression.StartsWith("FixedValues(", StringComparison.Ordinal))
             || CyberwareExpression.Evaluate(expression, rating) is not { } evaluated
             || evaluated < int.MinValue || evaluated > int.MaxValue)
             return false;
