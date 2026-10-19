@@ -89,8 +89,30 @@ public sealed partial class CyberwareManager
     public bool RequiresText(CyberwareCatalogEntry entry) =>
         entry.Node.Element("bonus") is { } bonus && HasSelectText(bonus) && TryGetSimpleBonuses(bonus, 1, out _);
 
+    private static readonly string[] SelectableAttributeNames =
+        ["BOD", "AGI", "REA", "STR", "CHA", "INT", "LOG", "WIL", "EDG", "MAG", "RES"];
+
+    public IReadOnlyList<string> GetSelectableAttributes(CyberwareCatalogEntry entry)
+    {
+        var selection = entry.Node.Element("bonus")?.Element("selectattribute");
+        if (!IsSupportedSelectAttribute(selection, 1, out _, out var included, out var excluded))
+            return [];
+        IEnumerable<string> options = included.Count > 0 ? included : SelectableAttributeNames;
+        return options
+            .Where(attribute => !excluded.Contains(attribute, StringComparer.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    public bool RequiresAttributeSelection(CyberwareCatalogEntry entry) =>
+        GetSelectableAttributes(entry).Count > 0;
+
     // One or more supported tags in a single <bonus>; each tag must create a distinct improvement.
-    private static bool TryGetSimpleBonuses(XElement? bonus, int rating, out IReadOnlyList<SimpleBonus> results)
+    private static bool TryGetSimpleBonuses(
+        XElement? bonus,
+        int rating,
+        out IReadOnlyList<SimpleBonus> results,
+        string? selectedAttribute = null)
     {
         results = [];
         if (bonus is null || !bonus.HasElements
@@ -110,6 +132,21 @@ public sealed partial class CyberwareManager
         var list = new List<SimpleBonus>();
         foreach (var element in elements)
         {
+            if (element.Name.LocalName == "selectattribute")
+            {
+                if (!IsSupportedSelectAttribute(element, rating, out _, out var included, out var excluded))
+                    return false;
+                IEnumerable<string> options = included.Count > 0 ? included : SelectableAttributeNames;
+                if (!options.Any(attribute => !excluded.Contains(attribute, StringComparer.Ordinal)))
+                    return false;
+                if (selectedAttribute is not null)
+                {
+                    if (!TryGetSelectedAttributeBonus(bonus, rating, selectedAttribute, out var attributeBonus))
+                        return false;
+                    list.Add(attributeBonus);
+                }
+                continue;
+            }
             if (!TryGetSimpleBonusElement(element, bonusUnique, rating, out var single))
                 return false;
             list.Add(single);
@@ -118,6 +155,51 @@ public sealed partial class CyberwareManager
         if (list.Select(b => (b.Type, b.Unique, b.ImprovedName)).Distinct().Count() != list.Count)
             return false;
         results = list;
+        return true;
+    }
+
+    private static bool IsSupportedSelectAttribute(
+        XElement? element,
+        int rating,
+        out int max,
+        out List<string> included,
+        out List<string> excluded)
+    {
+        max = 0;
+        included = [];
+        excluded = [];
+        if (element is not { HasAttributes: false }
+            || element.Elements().Any(e => e.Name.LocalName is not ("attribute" or "excludeattribute" or "max"))
+            || element.Elements("max").Count() != 1
+            || element.Elements("attribute").Any(e => e.HasAttributes || e.HasElements || string.IsNullOrWhiteSpace(e.Value))
+            || element.Elements("excludeattribute").Any(e => e.HasAttributes || e.HasElements || string.IsNullOrWhiteSpace(e.Value))
+            || element.Elements().Any(e => e.Name.LocalName == "max" && (e.HasAttributes || e.HasElements))
+            || element.Nodes().Any(n => n is XText t && !string.IsNullOrWhiteSpace(t.Value))
+            || !TryEvaluateSimpleBonusValue(element.Element("max")!.Value, rating, out max)
+            || max < 0)
+            return false;
+        included = element.Elements("attribute").Select(e => e.Value.Trim()).Distinct(StringComparer.Ordinal).ToList();
+        excluded = element.Elements("excludeattribute").Select(e => e.Value.Trim()).Distinct(StringComparer.Ordinal).ToList();
+        return included.Concat(excluded).All(a => SelectableAttributeNames.Contains(a, StringComparer.Ordinal));
+    }
+
+    private static bool TryGetSelectedAttributeBonus(
+        XElement? bonus,
+        int rating,
+        string? selectedAttribute,
+        out SimpleBonus result)
+    {
+        result = null!;
+        if (bonus?.Element("selectattribute") is not { } selection)
+            return false;
+        if (!IsSupportedSelectAttribute(selection, rating, out var max, out var included, out var excluded))
+            return false;
+        IEnumerable<string> options = included.Count > 0 ? included : SelectableAttributeNames;
+        if (string.IsNullOrWhiteSpace(selectedAttribute)
+            || !options.Contains(selectedAttribute, StringComparer.Ordinal)
+            || excluded.Contains(selectedAttribute, StringComparer.Ordinal))
+            return false;
+        result = new SimpleBonus("Attribute", bonus.Attribute("unique")?.Value ?? string.Empty, max, selectedAttribute, false, "max");
         return true;
     }
 

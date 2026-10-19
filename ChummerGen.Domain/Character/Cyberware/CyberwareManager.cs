@@ -102,7 +102,8 @@ public sealed partial class CyberwareManager
         int rating,
         string? parentGuid = null,
         int? variableCost = null,
-        string? side = null)
+        string? side = null,
+        string? selectedAttribute = null)
     {
         var root = _session.Xml.Root;
         if (root is null)
@@ -160,10 +161,14 @@ public sealed partial class CyberwareManager
 
         var requiresSide = RequiresSide(entry);
         var requiresText = RequiresText(entry);
+        var requiresAttributeSelection = RequiresAttributeSelection(entry);
         if (requiresSide && string.IsNullOrWhiteSpace(side))
             return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Auswahl einer Seite (links/rechts).");
         if (requiresText && string.IsNullOrWhiteSpace(side))
             return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Eingabe eines Textes.");
+        if (requiresAttributeSelection
+            && !TryGetSelectedAttributeBonus(entry.Node.Element("bonus"), rating, selectedAttribute, out _))
+            return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Auswahl eines zulässigen Attributs.");
 
         var item = BuildElement(entry, grade, rating, minRating, maxRating, source, chosenCost);
         if (requiresSide || requiresText)
@@ -204,7 +209,7 @@ public sealed partial class CyberwareManager
             }
             else if (TryGetDamageResistanceBonusValue(item.Element("bonus"), rating, out var parentDamageResistance))
                 ApplyDamageResistanceBonus(item, parentDamageResistance);
-            else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var parentSimple))
+            else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var parentSimple, selectedAttribute))
                 ApplySimpleBonuses(item, parentSimple);
             children.Add(item);
             return CyberwareOperationResult.Ok(Find(item.Element("guid")!.Value));
@@ -240,7 +245,7 @@ public sealed partial class CyberwareManager
         }
         else if (TryGetDamageResistanceBonusValue(item.Element("bonus"), rating, out var resistance))
             ApplyDamageResistanceBonus(item, resistance);
-        else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var simple))
+        else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var simple, selectedAttribute))
         {
             if (requiresText)
                 ApplySimpleBonus(item, new SimpleBonus("Text", item.Element("bonus")?.Attribute("unique")?.Value ?? string.Empty, 0, side!.Trim()));
