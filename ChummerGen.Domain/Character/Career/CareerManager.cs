@@ -246,6 +246,147 @@ public static class CareerManager
         && entry.Undo is { KarmaType: KarmaExpenseType.ImproveAttribute } undo
         && ImprovableAttributes.Contains(undo.ObjectId, StringComparer.OrdinalIgnoreCase);
 
+    private static XElement? FindSkillElement(CharacterSession session, string name) =>
+        session.Xml.Root?.Element("skills")?.Elements("skill").FirstOrDefault(s =>
+            string.Equals(s.Element("name")?.Value?.Trim(), name, StringComparison.OrdinalIgnoreCase));
+
+    private static XElement? FindSkillGroupElement(CharacterSession session, string name) =>
+        session.Xml.Root?.Element("skillgroups")?.Elements("skillgroup").FirstOrDefault(g =>
+            string.Equals(g.Element("name")?.Value?.Trim(), name, StringComparison.OrdinalIgnoreCase));
+
+    private static bool RootFlag(CharacterSession session, string name) =>
+        string.Equals(session.Xml.Root?.Element(name)?.Value, "True", StringComparison.OrdinalIgnoreCase);
+
+    private static (XElement El, string Name, int Rating, int Cost) ResolveSkillImprovement(CharacterSession session, string skill)
+    {
+        if (!IsCareerMode(session))
+            throw new InvalidOperationException("Steigern ist nur im Karrieremodus möglich.");
+        var el = FindSkillElement(session, skill)
+            ?? throw new InvalidOperationException($"Fertigkeit {skill} fehlt im Charakter.");
+        if ((bool?)el.Element("knowledge") == true || (bool?)el.Element("exotic") == true)
+            throw new InvalidOperationException("Wissens- und Exotische Fertigkeiten werden noch nicht unterstützt.");
+        if ((bool?)el.Element("grouped") == true)
+            throw new InvalidOperationException("Die Fertigkeit gehört zu einer Gruppe; steigere die Gruppe oder breche sie zuerst.");
+
+        var name = el.Element("name")!.Value.Trim();
+        var rating = (int?)el.Element("rating") ?? 0;
+        var max = (int?)el.Element("ratingmax") ?? 6;
+        if (rating >= max)
+            throw new InvalidOperationException($"Fertigkeit {name} hat ihr Maximum erreicht.");
+
+        var settings = session.Settings;
+        var cost = rating == 0
+            ? settings.NewActiveSkillKarmaCost
+            : (rating + 1) * settings.ImproveActiveSkillKarmaCost * (rating >= 6 ? 2 : 1);
+        var category = el.Element("skillcategory")?.Value?.Trim();
+        if ((RootFlag(session, "uneducated") && category == "Technical Active")
+            || (RootFlag(session, "uncouth") && category == "Social Active")
+            || (RootFlag(session, "infirm") && category == "Physical Active"))
+            cost *= 2;
+        return (el, name, rating, cost);
+    }
+
+    public static int GetSkillImproveCost(CharacterSession session, string skill)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return ResolveSkillImprovement(session, skill).Cost;
+    }
+
+    public static ExpenseLogEntry ImproveSkill(CharacterSession session, string skill, string reasonPrefix = "Fertigkeit", DateTime? date = null)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var (el, name, rating, cost) = ResolveSkillImprovement(session, skill);
+        if (cost > GetKarma(session))
+            throw new InvalidOperationException("Nicht genügend Karma.");
+
+        var entry = new ExpenseLogEntry(Guid.NewGuid(), date ?? DateTime.Now, -cost,
+            $"{reasonPrefix} {name} {rating} -> {rating + 1}", ExpenseType.Karma, false,
+            new ExpenseUndo(KarmaExpenseType.ImproveSkill, NuyenExpenseType.AddCyberware, name));
+
+        // Legacy: eine einzeln gesteigerte Fertigkeit bricht ihre Gruppe.
+        var group = el.Element("skillgroup")?.Value?.Trim();
+        if (!string.IsNullOrEmpty(group))
+            FindSkillGroupElement(session, group)?.SetElementValue("broken", "True");
+
+        new AttributesSkills.AttributesSkillsManager(session).UpdateSkillRating(name, rating + 1);
+        session.Model.Karma = GetKarma(session) - cost;
+        AddRawExpense(session, entry);
+        return entry;
+    }
+
+    private static (XElement El, string Name, int Rating, int Cost) ResolveSkillGroupImprovement(CharacterSession session, string group)
+    {
+        if (!IsCareerMode(session))
+            throw new InvalidOperationException("Steigern ist nur im Karrieremodus möglich.");
+        var el = FindSkillGroupElement(session, group)
+            ?? throw new InvalidOperationException($"Fertigkeitsgruppe {group} fehlt im Charakter.");
+        if ((bool?)el.Element("broken") == true)
+            throw new InvalidOperationException("Die Fertigkeitsgruppe ist gebrochen.");
+
+        var name = el.Element("name")!.Value.Trim();
+        var rating = (int?)el.Element("rating") ?? 0;
+        var max = (int?)el.Element("ratingmax") ?? 6;
+        if (rating >= max)
+            throw new InvalidOperationException($"Gruppe {name} hat ihr Maximum erreicht.");
+
+        var cost = rating == 0
+            ? session.Settings.NewSkillGroupKarmaCost
+            : (rating + 1) * session.Settings.ImproveSkillGroupKarmaCost;
+        return (el, name, rating, cost);
+    }
+
+    public static int GetSkillGroupImproveCost(CharacterSession session, string group)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return ResolveSkillGroupImprovement(session, group).Cost;
+    }
+
+    public static ExpenseLogEntry ImproveSkillGroup(CharacterSession session, string group, string reasonPrefix = "Fertigkeitsgruppe", DateTime? date = null)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var (_, name, rating, cost) = ResolveSkillGroupImprovement(session, group);
+        if (cost > GetKarma(session))
+            throw new InvalidOperationException("Nicht genügend Karma.");
+
+        var entry = new ExpenseLogEntry(Guid.NewGuid(), date ?? DateTime.Now, -cost,
+            $"{reasonPrefix} {name} {rating} -> {rating + 1}", ExpenseType.Karma, false,
+            new ExpenseUndo(KarmaExpenseType.ImproveSkillGroup, NuyenExpenseType.AddCyberware, name));
+
+        new AttributesSkills.AttributesSkillsManager(session).UpdateSkillGroupRating(name, rating + 1);
+        session.Model.Karma = GetKarma(session) - cost;
+        AddRawExpense(session, entry);
+        return entry;
+    }
+
+    private static bool IsSkillImprovement(ExpenseLogEntry entry) =>
+        entry.Type == ExpenseType.Karma && entry.Undo is { KarmaType: KarmaExpenseType.ImproveSkill or KarmaExpenseType.ImproveSkillGroup };
+
+    // Gibt false zurück, wenn die Steigerung nicht sicher zurückgedreht werden kann.
+    private static bool TryRevertSkillImprovement(CharacterSession session, ExpenseUndo undo)
+    {
+        var manager = new AttributesSkills.AttributesSkillsManager(session);
+        if (undo.KarmaType == KarmaExpenseType.ImproveSkill)
+        {
+            var el = FindSkillElement(session, undo.ObjectId);
+            if (el is null || (bool?)el.Element("grouped") == true || (bool?)el.Element("knowledge") == true)
+                return false;
+            var rating = (int?)el.Element("rating") ?? 0;
+            if (rating <= 0)
+                return false;
+            manager.UpdateSkillRating(undo.ObjectId, rating - 1);
+            return true;
+        }
+
+        var group = FindSkillGroupElement(session, undo.ObjectId);
+        if (group is null || (bool?)group.Element("broken") == true)
+            return false;
+        var groupRating = (int?)group.Element("rating") ?? 0;
+        if (groupRating <= 0)
+            return false;
+        manager.UpdateSkillGroupRating(undo.ObjectId, groupRating - 1);
+        return true;
+    }
+
     public static bool UndoExpense(CharacterSession session, Guid expenseGuid)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -260,7 +401,10 @@ public static class CareerManager
             return false;
 
         var entry = ParseExpenseElement(target);
-        if (entry is null || !(IsManualEntry(entry) || IsAttributeImprovement(entry)))
+        if (entry is null || !(IsManualEntry(entry) || IsAttributeImprovement(entry) || IsSkillImprovement(entry)))
+            return false;
+
+        if (IsSkillImprovement(entry) && !TryRevertSkillImprovement(session, entry.Undo!))
             return false;
 
         if (IsAttributeImprovement(entry))

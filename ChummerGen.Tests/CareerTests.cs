@@ -198,6 +198,38 @@ public sealed class CareerTests
     }
 
     [Fact]
+    public void ImproveSkillAndGroup_ChargeKarmaAndUndoRestores()
+    {
+        var session = new CharacterSession(ChumSerializer.Parse("""
+            <character><created>True</created><karma>50</karma><nuyen>0</nuyen><uncouth>True</uncouth><expenses />
+              <skills>
+                <skill><name>Con</name><skillgroup>Influence</skillgroup><skillcategory>Social Active</skillcategory><grouped>False</grouped><rating>0</rating><ratingmax>6</ratingmax><attribute>CHA</attribute></skill>
+                <skill><name>Pistols</name><skillgroup>Firearms</skillgroup><skillcategory>Combat Active</skillcategory><grouped>True</grouped><rating>0</rating><ratingmax>6</ratingmax><attribute>AGI</attribute></skill>
+                <skill><name>Language</name><knowledge>True</knowledge><rating>0</rating></skill>
+              </skills>
+              <skillgroups><skillgroup><name>Influence</name><rating>0</rating><ratingmax>6</ratingmax></skillgroup><skillgroup><name>Firearms</name><rating>0</rating><ratingmax>6</ratingmax></skillgroup></skillgroups>
+            </character>
+            """));
+
+        var skill = CareerManager.ImproveSkill(session, "Con");
+        Assert.Equal(-8, skill.Amount);
+        Assert.Equal(42, CareerManager.GetKarma(session));
+        Assert.Equal("True", session.Xml.Root!.Element("skillgroups")!.Elements("skillgroup").First().Element("broken")!.Value);
+        Assert.Throws<InvalidOperationException>(() => CareerManager.ImproveSkill(session, "Pistols"));
+        Assert.Throws<InvalidOperationException>(() => CareerManager.ImproveSkill(session, "Language"));
+
+        var group = CareerManager.ImproveSkillGroup(session, "Firearms");
+        Assert.Equal(-10, group.Amount);
+        Assert.Equal(1, new ChummerGen.Domain.Character.AttributesSkills.AttributesSkillsManager(session).GetSkills().Single(s => s.Name == "Pistols").Rating);
+        Assert.Throws<InvalidOperationException>(() => CareerManager.ImproveSkillGroup(session, "Influence"));
+
+        Assert.True(CareerManager.UndoExpense(session, group.Guid));
+        Assert.True(CareerManager.UndoExpense(session, skill.Guid));
+        Assert.Equal(50, CareerManager.GetKarma(session));
+        Assert.All(new ChummerGen.Domain.Character.AttributesSkills.AttributesSkillsManager(session).GetSkills(), s => Assert.Equal(0, s.Rating));
+    }
+
+    [Fact]
     public void EditExpense_ChangesAmountOnlyForManualEntries()
     {
         var session = new CharacterSession(ChumSerializer.Parse(SampleCharacterXml));

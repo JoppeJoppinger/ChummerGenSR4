@@ -1,7 +1,12 @@
 @using ChummerGen.Domain.Character
 @using ChummerGen.Domain.Character.AttributesSkills
+@using ChummerGen.Domain.Character.Career
 
 <div class="skills-tab-container" style="display: flex; flex-direction: column; gap: 1.5rem;">
+    @if (!string.IsNullOrEmpty(improveError))
+    {
+        <div class="alert alert-danger py-2 mb-0" role="alert" id="skill-improve-error">@improveError</div>
+    }
     <!-- Filter & Übersicht -->
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border: 1px solid #ccc; background: #fafafa; padding: 0.75rem 1rem; border-radius: 4px;">
         <div style="display: flex; gap: 1rem; align-items: center;">
@@ -47,7 +52,16 @@
                         </div>
 
                         <div style="display: flex; align-items: center; gap: 0.3rem;">
-                            @if (!group.Broken)
+                            @if (!group.Broken && IsCareer)
+                            {
+                                <span style="font-weight: bold; width: 24px; text-align: center;">@group.Rating</span>
+                                @if (GroupCost(group.Name) is int groupCost)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 btn-improve-group" data-group="@group.Name"
+                                            @onclick="() => ImproveGroup(group.Name)">+ (@groupCost Karma)</button>
+                                }
+                            }
+                            else if (!group.Broken)
                             {
                                 <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
                                         disabled="@(group.Rating <= 0)"
@@ -115,6 +129,17 @@
                             @if (skill.Grouped)
                             {
                                 <span style="font-weight: bold; color: #555;">@skill.Rating (@GroupLabel)</span>
+                            }
+                            else if (IsCareer)
+                            {
+                                <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                                    <span style="font-weight: bold; width: 24px; text-align: center;">@skill.Rating</span>
+                                    @if (SkillCost(skill.Name) is int skillCost)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 btn-improve-skill" data-skill="@skill.Name"
+                                                @onclick="() => ImproveSkill(skill.Name)">+ (@skillCost Karma)</button>
+                                    }
+                                </div>
                             }
                             else
                             {
@@ -218,6 +243,35 @@
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(c => c)
             .ToList();
+    }
+
+    private bool IsCareer => CareerManager.IsCareerMode(Session);
+    private string? improveError;
+
+    private int? SkillCost(string name)
+    {
+        try { return CareerManager.GetSkillImproveCost(Session, name); }
+        catch (InvalidOperationException) { return null; }
+    }
+
+    private int? GroupCost(string name)
+    {
+        try { return CareerManager.GetSkillGroupImproveCost(Session, name); }
+        catch (InvalidOperationException) { return null; }
+    }
+
+    private void ImproveSkill(string name)
+    {
+        improveError = null;
+        try { CareerManager.ImproveSkill(Session, name); Reload(); }
+        catch (InvalidOperationException ex) { improveError = ex.Message; }
+    }
+
+    private void ImproveGroup(string name)
+    {
+        improveError = null;
+        try { CareerManager.ImproveSkillGroup(Session, name); Reload(); }
+        catch (InvalidOperationException ex) { improveError = ex.Message; }
     }
 
     private void IncrementSkillRating(string skillName, int delta)

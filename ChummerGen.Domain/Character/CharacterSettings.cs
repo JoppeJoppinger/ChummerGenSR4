@@ -43,6 +43,7 @@ public sealed class CharacterSettings
     public int NewActiveSkillKarmaCost { get; set; } = 4;
     public int ImproveActiveSkillKarmaCost { get; set; } = 2;
     public int NewSkillGroupKarmaCost { get; set; } = 10;
+    public int ImproveSkillGroupKarmaCost { get; set; } = 5;
     public int KarmaNuyenPer { get; set; } = 2500;
     public string BuildMethod { get; set; } = "BP";
     public int BuildPoints { get; set; } = 400;
