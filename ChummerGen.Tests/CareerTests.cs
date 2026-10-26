@@ -165,7 +165,7 @@ public sealed class CareerTests
         var session = new CharacterSession(ChumSerializer.Parse(SampleCharacterXml));
         var noUndo = new ExpenseLogEntry(Guid.NewGuid(), DateTime.Now, -3, "Legacy", ExpenseType.Karma);
         var skill = new ExpenseLogEntry(Guid.NewGuid(), DateTime.Now, -2, "Attr", ExpenseType.Karma, false,
-            new ExpenseUndo(KarmaExpenseType.ImproveAttribute, NuyenExpenseType.AddCyberware, "BOD"));
+            new ExpenseUndo(KarmaExpenseType.AddQuality, NuyenExpenseType.AddCyberware, "Quality"));
         AddRaw(session, noUndo);
         AddRaw(session, skill);
 
@@ -173,6 +173,28 @@ public sealed class CareerTests
         Assert.False(CareerManager.UndoExpense(session, skill.Guid));
         Assert.Equal(10, CareerManager.GetKarma(session));
         Assert.Equal(2, CareerManager.GetExpenses(session).Count);
+    }
+
+    [Fact]
+    public void ImproveAttribute_ChargesKarmaAndUndoRestores()
+    {
+        var session = new CharacterSession(ChumSerializer.Parse("""
+            <character><created>True</created><karma>30</karma><nuyen>0</nuyen><expenses />
+              <attributes><attribute><name>BOD</name><metatypemin>1</metatypemin><metatypemax>6</metatypemax><metatypeaugmax>9</metatypeaugmax><value>3</value><base>3</base><augmodifier>0</augmodifier><totalvalue>3</totalvalue></attribute></attributes>
+            </character>
+            """));
+
+        var entry = CareerManager.ImproveAttribute(session, "BOD");
+
+        Assert.Equal(-20, entry.Amount);
+        Assert.Equal(10, CareerManager.GetKarma(session));
+        Assert.Equal(4, new ChummerGen.Domain.Character.AttributesSkills.AttributesSkillsManager(session).GetAttribute("BOD")!.BaseValue);
+        Assert.Throws<InvalidOperationException>(() => CareerManager.ImproveAttribute(session, "BOD"));
+        Assert.Throws<InvalidOperationException>(() => CareerManager.ImproveAttribute(session, "MAG"));
+
+        Assert.True(CareerManager.UndoExpense(session, entry.Guid));
+        Assert.Equal(30, CareerManager.GetKarma(session));
+        Assert.Equal(3, new ChummerGen.Domain.Character.AttributesSkills.AttributesSkillsManager(session).GetAttribute("BOD")!.BaseValue);
     }
 
     [Fact]

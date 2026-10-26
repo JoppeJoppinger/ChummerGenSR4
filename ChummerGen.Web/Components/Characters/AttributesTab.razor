@@ -1,5 +1,6 @@
 @using ChummerGen.Domain.Character
 @using ChummerGen.Domain.Character.AttributesSkills
+@using ChummerGen.Domain.Character.Career
 
 <div class="attributes-tab-container" style="display: flex; flex-direction: column; gap: 1.5rem;">
     <!-- Attribute Grid -->
@@ -28,6 +29,19 @@
                             <span style="color: #666; font-size: 0.8rem; margin-left: 0.3rem;">@GetAttributeLabel(attr.Name)</span>
                         </td>
                         <td style="text-align: center;">
+                            @if (IsCareer)
+                            {
+                                <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                                    <span style="font-weight: bold; width: 32px; display: inline-block;">@attr.BaseValue</span>
+                                    @if (CanImprove(attr))
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 btn-improve-attribute" data-attribute="@attr.Name"
+                                                @onclick="() => ImproveAttribute(attr.Name)">+ (@CareerManager.GetAttributeImproveCost(Session, attr.Name) Karma)</button>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
                             <div style="display: inline-flex; align-items: center; gap: 0.3rem;">
                                 <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
                                         disabled="@(attr.BaseValue <= attr.MetatypeMin)"
@@ -37,6 +51,7 @@
                                         disabled="@(attr.MetatypeMax > 0 && attr.BaseValue >= attr.MetatypeMax)"
                                         @onclick="() => IncrementAttribute(attr.Name, 1)">+</button>
                             </div>
+                            }
                         </td>
                         <td style="text-align: center;">@attr.MetatypeMin / @(attr.MetatypeMax > 0 ? attr.MetatypeMax.ToString() : "—")</td>
                         <td style="text-align: center;">@(attr.MetatypeAugMax > 0 ? attr.MetatypeAugMax.ToString() : "—")</td>
@@ -48,6 +63,10 @@
                 }
             </tbody>
         </table>
+        @if (!string.IsNullOrEmpty(improveError))
+        {
+            <div class="alert alert-danger py-2" role="alert" id="attribute-improve-error">@improveError</div>
+        }
 
         <!-- Zusammenfassung BP -->
         <div class="attributes-summary-box" style="margin-top: 1rem; padding: 0.8rem; background: #eef3fb; border: 1px solid #ccd7e6; border-radius: 4px; max-width: 900px; font-size: 0.9rem;">
@@ -205,6 +224,36 @@
         attributes = manager.GetAttributes();
         derivedAttrs = manager.GetDerivedAttributes();
         summary = manager.CalculateAttributesSummary();
+    }
+
+    private bool IsCareer => CareerManager.IsCareerMode(Session);
+    private string? improveError;
+
+    private bool CanImprove(AttributeModel attr)
+    {
+        try
+        {
+            CareerManager.GetAttributeImproveCost(Session, attr.Name);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private void ImproveAttribute(string name)
+    {
+        improveError = null;
+        try
+        {
+            CareerManager.ImproveAttribute(Session, name);
+            Reload();
+        }
+        catch (InvalidOperationException ex)
+        {
+            improveError = ex.Message;
+        }
     }
 
     private void IncrementAttribute(string name, int delta)

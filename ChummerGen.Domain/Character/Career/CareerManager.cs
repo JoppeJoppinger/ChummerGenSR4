@@ -188,6 +188,64 @@ public static class CareerManager
         return entry;
     }
 
+    private static readonly string[] ImprovableAttributes = ["BOD", "AGI", "REA", "STR", "CHA", "INT", "LOG", "WIL", "EDG"];
+
+    public static int GetAttributeImproveCost(CharacterSession session, string attribute)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var (_, _, cost) = ResolveAttributeImprovement(session, attribute);
+        return cost;
+    }
+
+    // MAG/RES bleiben bewusst ausgeschlossen (Essenzstrafe/Free-Spirit-Maxima nicht portiert).
+    private static (AttributesSkills.AttributesSkillsManager Manager, AttributesSkills.AttributeModel Attr, int Cost) ResolveAttributeImprovement(CharacterSession session, string attribute)
+    {
+        var name = ImprovableAttributes.FirstOrDefault(a => string.Equals(a, attribute, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Attribut {attribute} kann nicht gesteigert werden.");
+        if (!IsCareerMode(session))
+            throw new InvalidOperationException("Steigern ist nur im Karrieremodus möglich.");
+
+        var manager = new AttributesSkills.AttributesSkillsManager(session);
+        var attr = manager.GetAttribute(name)
+            ?? throw new InvalidOperationException($"Attribut {name} fehlt im Charakter.");
+        if (attr.BaseValue >= attr.MetatypeMax)
+            throw new InvalidOperationException($"Attribut {name} hat sein Maximum erreicht.");
+
+        var perPoint = session.Settings.AttributeKarmaCost;
+        var cost = (attr.BaseValue + attr.AugModifier + 1) * perPoint;
+        if (session.Settings.AlternateMetatypeAttributeKarma)
+            cost -= (attr.MetatypeMin - 1) * perPoint;
+        return (manager, attr, cost);
+    }
+
+    public static ExpenseLogEntry ImproveAttribute(CharacterSession session, string attribute, string reasonPrefix = "Attribut", DateTime? date = null)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var (manager, attr, cost) = ResolveAttributeImprovement(session, attribute);
+        if (cost > GetKarma(session))
+            throw new InvalidOperationException("Nicht genügend Karma.");
+
+        var from = attr.BaseValue + attr.AugModifier;
+        var entry = new ExpenseLogEntry(
+            Guid.NewGuid(),
+            date ?? DateTime.Now,
+            -cost,
+            $"{reasonPrefix} {attr.Name.ToUpperInvariant()} {from} -> {from + 1}",
+            ExpenseType.Karma,
+            false,
+            new ExpenseUndo(KarmaExpenseType.ImproveAttribute, NuyenExpenseType.AddCyberware, attr.Name.ToUpperInvariant()));
+
+        manager.UpdateAttributeValue(attr.Name, attr.BaseValue + 1);
+        session.Model.Karma = GetKarma(session) - cost;
+        AddRawExpense(session, entry);
+        return entry;
+    }
+
+    private static bool IsAttributeImprovement(ExpenseLogEntry entry) =>
+        entry.Type == ExpenseType.Karma
+        && entry.Undo is { KarmaType: KarmaExpenseType.ImproveAttribute } undo
+        && ImprovableAttributes.Contains(undo.ObjectId, StringComparer.OrdinalIgnoreCase);
+
     public static bool UndoExpense(CharacterSession session, Guid expenseGuid)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -202,8 +260,17 @@ public static class CareerManager
             return false;
 
         var entry = ParseExpenseElement(target);
-        if (entry is null || !IsManualEntry(entry))
+        if (entry is null || !(IsManualEntry(entry) || IsAttributeImprovement(entry)))
             return false;
+
+        if (IsAttributeImprovement(entry))
+        {
+            var manager = new AttributesSkills.AttributesSkillsManager(session);
+            var attr = manager.GetAttribute(entry.Undo!.ObjectId);
+            if (attr is null || attr.BaseValue <= attr.MetatypeMin)
+                return false;
+            manager.UpdateAttributeValue(attr.Name, attr.BaseValue - 1);
+        }
 
         if (entry.Type == ExpenseType.Karma)
         {
