@@ -277,7 +277,7 @@ public static class CareerManager
     }
 
     // Nur manuelle Buchungen sind rücknehmbar/änderbar; andere Undo-Typen würden Charakterdaten zurückdrehen (nicht portiert).
-    private static bool IsManualEntry(ExpenseLogEntry entry) => entry.Undo is { } undo && (entry.Type == ExpenseType.Karma
+    public static bool IsManualEntry(ExpenseLogEntry entry) => entry.Undo is { } undo && (entry.Type == ExpenseType.Karma
         ? undo.KarmaType is KarmaExpenseType.ManualAdd or KarmaExpenseType.ManualSubtract
         : undo.NuyenType is NuyenExpenseType.ManualAdd or NuyenExpenseType.ManualSubtract);
 

@@ -39,6 +39,30 @@
         </div>
     }
 
+    @if (editEntry is not null)
+    {
+        <div class="card p-3 mb-3 border-secondary shadow-sm" id="edit-form-card">
+            <div class="row g-2 align-items-end">
+                <div class="col-sm-3">
+                    <label class="form-label small mb-1" for="edit-amount">@TransactionAmountLabelFor(editEntry.Type)</label>
+                    <input id="edit-amount" type="number" class="form-control form-control-sm" @bind="editAmount" disabled="@(!CareerManager.IsManualEntry(editEntry))" />
+                </div>
+                <div class="col-sm-4">
+                    <label class="form-label small mb-1" for="edit-reason">@ReasonLabel</label>
+                    <input id="edit-reason" type="text" class="form-control form-control-sm" @bind="editReason" />
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label small mb-1" for="edit-date">@DateLabel</label>
+                    <input id="edit-date" type="datetime-local" class="form-control form-control-sm" @bind="editDate" />
+                </div>
+                <div class="col-sm-2 d-flex gap-1">
+                    <button type="button" id="btn-edit-submit" class="btn btn-primary btn-sm flex-grow-1" @onclick="SubmitEdit">OK</button>
+                    <button type="button" id="btn-edit-cancel" class="btn btn-outline-secondary btn-sm" @onclick="() => editEntry = null">@CancelLabel</button>
+                </div>
+            </div>
+        </div>
+    }
+
     @if (activeAction != TransactionAction.None)
     {
         <div class="card p-3 mb-3 border-primary shadow-sm" id="transaction-form-card">
@@ -112,7 +136,9 @@
                                                 <span class="badge bg-secondary ms-1">Erstattung</span>
                                             }
                                         </td>
-                                        <td class="text-end">
+                                        <td class="text-end text-nowrap">
+                                            <button type="button" class="btn btn-sm btn-link p-0 me-1 btn-edit-expense" title="Bearbeiten"
+                                                    @onclick="() => StartEdit(entry)">✎</button>
                                             <button type="button" class="btn btn-sm btn-link text-danger p-0" title="Rückgängig"
                                                     @onclick="() => Undo(entry.Guid)">✕</button>
                                         </td>
@@ -170,7 +196,9 @@
                                                 <span class="badge bg-secondary ms-1">Erstattung</span>
                                             }
                                         </td>
-                                        <td class="text-end">
+                                        <td class="text-end text-nowrap">
+                                            <button type="button" class="btn btn-sm btn-link p-0 me-1 btn-edit-expense" title="Bearbeiten"
+                                                    @onclick="() => StartEdit(entry)">✎</button>
                                             <button type="button" class="btn btn-sm btn-link text-danger p-0" title="Rückgängig"
                                                     @onclick="() => Undo(entry.Guid)">✕</button>
                                         </td>
@@ -328,6 +356,42 @@
             }
 
             activeAction = TransactionAction.None;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private ExpenseLogEntry? editEntry;
+    private int editAmount;
+    private string editReason = string.Empty;
+    private DateTime editDate = DateTime.Now;
+
+    private string TransactionAmountLabelFor(ExpenseType type) =>
+        type == ExpenseType.Karma ? KarmaAmountLabel : NuyenAmountLabel;
+
+    private void StartEdit(ExpenseLogEntry entry)
+    {
+        errorMessage = null;
+        editEntry = entry;
+        editAmount = entry.Amount;
+        editReason = entry.Reason;
+        editDate = entry.Date == DateTime.MinValue ? DateTime.Now : entry.Date;
+    }
+
+    private void SubmitEdit()
+    {
+        errorMessage = null;
+        if (editEntry is null)
+            return;
+
+        try
+        {
+            if (!CareerManager.EditExpense(Session, editEntry.Guid, editAmount, editReason, editDate))
+                errorMessage = "Diese Buchung kann nicht bearbeitet werden.";
+            else
+                editEntry = null;
         }
         catch (Exception ex)
         {
