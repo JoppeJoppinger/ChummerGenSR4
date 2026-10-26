@@ -259,12 +259,46 @@
                             disabled="@(SelectedEntry is null || Manager.GetAddBlocker(SelectedEntry) is not null || (Manager.RequiresSide(SelectedEntry) || Manager.RequiresText(SelectedEntry)) && string.IsNullOrWhiteSpace(addSide) || Manager.RequiresAttributeSelection(SelectedEntry) && string.IsNullOrWhiteSpace(addAttribute) || Manager.RequiresSkillSelection(SelectedEntry) && string.IsNullOrWhiteSpace(addSkill) || Manager.RequiresSkillGroupSelection(SelectedEntry) && string.IsNullOrWhiteSpace(addSkillGroup))">Hinzufügen</button>
                 }
             </div>
+            @if (catalogAvailable)
+            {
+                <div class="cyber-add-pane" id="cyber-suite-pane">
+                    <h4>Suite</h4>
+                    <div class="cyber-edit-fields">
+                        <label>Art</label>
+                        <select class="form-select form-select-sm" value="@suiteSource" @onchange="OnSuiteSourceChanged">
+                            <option value="@CyberwareSource.Cyberware">Cyberware</option>
+                            <option value="@CyberwareSource.Bioware">Bioware</option>
+                        </select>
+
+                        <label>Suite</label>
+                        <select class="form-select form-select-sm" id="cyber-suite-select" value="@suiteName" @onchange="OnSuiteChanged">
+                            <option value="">–</option>
+                            @foreach (var suiteOption in AvailableSuites)
+                            {
+                                <option value="@suiteOption.Name">@suiteOption.Name (@suiteOption.GradeName)</option>
+                            }
+                        </select>
+
+                        @for (var sideIndex = 0; sideIndex < suiteSides.Count; sideIndex++)
+                        {
+                            var index = sideIndex;
+                            <label>Seite @(index + 1)</label>
+                            <select class="form-select form-select-sm" value="@suiteSides[index]" @onchange="e => { suiteSides[index] = e.Value?.ToString() ?? string.Empty; }">
+                                <option value="">–</option>
+                                <option value="@T("String_Improvement_SideLeft")">@T("String_Improvement_SideLeft")</option>
+                                <option value="@T("String_Improvement_SideRight")">@T("String_Improvement_SideRight")</option>
+                            </select>
+                        }
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary mt-2" id="cyber-suite-apply" @onclick="ApplySuite"
+                            disabled="@(suiteName.Length == 0 || suiteSides.Any(string.IsNullOrWhiteSpace))">Suite anwenden</button>
+                </div>
+            }
         </div>
     </div>
 </div>
 
-<style>
-    .cyber-container { font-family: var(--font-ui, "Segoe UI", Tahoma, Arial, sans-serif); font-size: 13px; }
+<style>    .cyber-container { font-family: var(--font-ui, "Segoe UI", Tahoma, Arial, sans-serif); font-size: 13px; }
     .cyber-summary-bar { display: flex; flex-wrap: wrap; gap: 1.5rem; padding: 0.4rem 0.6rem; background: #f0f0f0; border: 1px solid #ccc; margin-bottom: 0.75rem; }
     .cyber-layout { display: grid; grid-template-columns: 1fr 340px; gap: 1rem; align-items: start; }
     .cyber-list-pane { overflow-x: auto; border: 1px solid #ccc; background: #fff; }
@@ -440,6 +474,40 @@
             addAttribute = string.Empty;
             addSkill = string.Empty;
             addSkillGroup = string.Empty;
+        }
+    }
+
+    private CyberwareSource suiteSource = CyberwareSource.Cyberware;
+    private string suiteName = string.Empty;
+    private List<string> suiteSides = [];
+
+    private IEnumerable<CyberwareSuite> AvailableSuites =>
+        Manager.ListSuites(suiteSource).Where(s => s.Blocker is null);
+
+    private void OnSuiteSourceChanged(ChangeEventArgs e)
+    {
+        suiteSource = Enum.TryParse<CyberwareSource>(e.Value?.ToString(), out var source) ? source : CyberwareSource.Cyberware;
+        suiteName = string.Empty;
+        suiteSides = [];
+    }
+
+    private void OnSuiteChanged(ChangeEventArgs e)
+    {
+        suiteName = e.Value?.ToString() ?? string.Empty;
+        var suite = suiteName.Length == 0 ? null : Manager.FindSuite(suiteSource, suiteName);
+        suiteSides = suite is null || suite.Blocker is not null
+            ? []
+            : Enumerable.Repeat(string.Empty, Manager.CountSuiteSides(suite)).ToList();
+    }
+
+    private void ApplySuite()
+    {
+        var result = Manager.ApplySuite(suiteSource, suiteName, suiteSides);
+        Report(result, $"Suite '{suiteName}' angewendet.");
+        if (result.Success)
+        {
+            suiteName = string.Empty;
+            suiteSides = [];
         }
     }
 

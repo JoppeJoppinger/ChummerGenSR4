@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -104,6 +104,18 @@ public sealed class CyberwareBrowserTests : PageTest
         var improvement = Assert.Single(XDocument.Parse(savedXml).Root!.Element("improvements")!.Elements("improvement"),
             i => i.Element("improvedname")?.Value == "Blades");
         Assert.Equal("Skill", improvement.Element("improvementttype")?.Value);
+
+        var suiteSelect = Page.Locator("#cyber-suite-select");
+        await suiteSelect.SelectOptionAsync("Urban Gunfighter");
+        for (var side = 2; side < await Page.Locator("#cyber-suite-pane select").CountAsync(); side++)
+            await Page.Locator("#cyber-suite-pane select").Nth(side).SelectOptionAsync(new SelectOptionValue { Index = 1 });
+        await Page.Locator("#cyber-suite-apply").ClickAsync();
+        await Expect(Page.Locator(".cyber-table tbody")).ToContainTextAsync("Obvious Full Leg");
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Speichern", Exact = true }).ClickAsync();
+        await Expect(Page.GetByText("Änderungen wurden gespeichert.", new() { Exact = true })).ToBeVisibleAsync();
+        var suiteXml = XDocument.Parse(await app.ReadCharacterXmlAsync("Fips Donnerfaust"));
+        Assert.Contains(suiteXml.Root!.Element("cyberwares")!.Elements("cyberware"),
+            c => c.Element("name")?.Value == "Obvious Full Leg" && c.Element("suite")?.Value == "True");
     }
 
     private static string NewTestEmail() => $"browser-{Guid.NewGuid():N}@example.test";
