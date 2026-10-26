@@ -14,29 +14,60 @@ public sealed partial class CyberwareManager
         string ImprovedName = "",
         bool AddToRating = false,
         string ValueElement = "val",
-        string Exclude = "");
+        string Exclude = "",
+        int Min = 0,
+        int Max = 0,
+        int AugMax = 0);
 
-    // Legacy "specificattribute" (not ESS): one <name> plus <val>; the value is stored as the augmented modifier, not "val".
+    // Legacy "specificattribute": <name> plus val/min/max/aug and optional <affectbase>. The value is stored as the
+    // augmented modifier ("aug"), <aug> as augmax. ESS only honours an integer <val>. "max" with "-natural" stays unsupported.
     private static bool TryGetAttributeBonus(XElement element, string bonusUnique, int rating, out SimpleBonus result)
     {
         result = null!;
+        var fields = new[] { "val", "min", "max", "aug" };
         if (element.HasAttributes
-            || element.Elements().Any(e => e.Name.LocalName is not ("name" or "val"))
-            || element.Elements("name").Count() != 1 || element.Elements("val").Count() != 1
+            || element.Elements().Any(e => e.Name.LocalName is not ("name" or "val" or "min" or "max" or "aug" or "affectbase"))
+            || element.Elements("name").Count() != 1
+            || fields.Any(f => element.Elements(f).Count() > 1)
+            || !fields.Any(f => element.Element(f) is not null)
+            || element.Elements().Where(e => e.Name.LocalName is not ("affectbase" or "name")).Any(e => e.HasAttributes || e.HasElements)
+            || element.Elements("affectbase").Count() > 1
+            || element.Elements("affectbase").Any(e => e.HasAttributes || e.HasElements)
             || element.Nodes().Any(n => n is XText t && !string.IsNullOrWhiteSpace(t.Value)))
             return false;
         var name = element.Element("name")!;
-        var val = element.Element("val")!;
-        if (name.HasElements || name.Attributes().Any(a => a.Name.LocalName != "precedence")
-            || name.Value is not ("BOD" or "AGI" or "REA" or "STR" or "CHA" or "INT" or "LOG" or "WIL" or "EDG")
-            || val.HasElements || val.HasAttributes
-            || !TryEvaluateSimpleBonusValue(val.Value, rating, out var value))
+        if (name.HasElements || name.Attributes().Any(a => a.Name.LocalName != "precedence"))
+            return false;
+        if (name.Value == "ESS")
+        {
+            if (name.HasAttributes || element.Element("affectbase") is not null
+                || element.Element("val") is not { } essenceNode
+                || !int.TryParse(essenceNode.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var essence)
+                || !TryGetAttributeValue(element, "min", rating, out _)
+                || !TryGetAttributeValue(element, "max", rating, out _)
+                || !TryGetAttributeValue(element, "aug", rating, out _))
+                return false;
+            result = new SimpleBonus("Essence", string.Empty, essence);
+            return true;
+        }
+
+        if (name.Value is not ("BOD" or "AGI" or "REA" or "STR" or "CHA" or "INT" or "LOG" or "WIL" or "EDG" or "MAG" or "RES")
+            || !TryGetAttributeValue(element, "val", rating, out var value)
+            || !TryGetAttributeValue(element, "min", rating, out var min)
+            || !TryGetAttributeValue(element, "max", rating, out var max)
+            || !TryGetAttributeValue(element, "aug", rating, out var augMax))
             return false;
         var unique = name.Attribute("precedence") is { } p ? "precedence" + p.Value : bonusUnique;
-        result = new SimpleBonus("Attribute", unique, value, name.Value, false, "aug");
+        var improvedName = name.Value + (element.Element("affectbase") is null ? string.Empty : "Base");
+        result = new SimpleBonus("Attribute", unique, value, improvedName, false, "aug", "", min, max, augMax);
         return true;
     }
 
+    private static bool TryGetAttributeValue(XElement element, string field, int rating, out int value)
+    {
+        value = 0;
+        return element.Element(field) is not { } node || TryEvaluateSimpleBonusValue(node.Value, rating, out value);
+    }
     // Legacy "specificskill", "skillgroup", "skillattribute", "skillcategory": a single <name>/<bonus> pair per bonus.
     // The precedence unique key is read from <specificskill> itself, but from <name> for skillattribute.
     private static bool TryGetSkillBonus(XElement element, string bonusUnique, int rating, out SimpleBonus result)
@@ -548,6 +579,7 @@ public sealed partial class CyberwareManager
         improvement.Element("improvedname")!.Value = bonus.ImprovedName;
         improvement.Element("addtorating")!.Value = bonus.AddToRating ? "True" : "False";
         improvement.Element("exclude")!.Value = bonus.Exclude;
+        SetAttributeLimits(improvement, bonus);
         improvements.Add(improvement);
     }
 
@@ -561,8 +593,20 @@ public sealed partial class CyberwareManager
                 .Where(i => string.Equals(i.Element("sourcename")?.Value, item.Guid, StringComparison.OrdinalIgnoreCase)
                     && IsSimpleBonusImprovement(i, bonus)).ToList() ?? [];
             if (matching.Count == 1)
+            {
                 matching[0].Element(bonus.ValueElement)!.Value = bonus.Value.ToString(CultureInfo.InvariantCulture);
+                SetAttributeLimits(matching[0], bonus);
+            }
         }
+    }
+
+    private static void SetAttributeLimits(XElement improvement, SimpleBonus bonus)
+    {
+        if (bonus.Type != "Attribute" || bonus.ValueElement != "aug")
+            return;
+        improvement.Element("min")!.Value = bonus.Min.ToString(CultureInfo.InvariantCulture);
+        improvement.Element("max")!.Value = bonus.Max.ToString(CultureInfo.InvariantCulture);
+        improvement.Element("augmax")!.Value = bonus.AugMax.ToString(CultureInfo.InvariantCulture);
     }
 
     private static bool RatingChangeKeepsSimpleBonus(CyberwareItem item, IReadOnlyCollection<XElement> own) =>

@@ -1470,10 +1470,15 @@ public sealed class CyberwareTests
     }
 
     [Theory]
-    [InlineData("<specificattribute><name>ESS</name><val>1</val></specificattribute>")]
-    [InlineData("<specificattribute><name>AGI</name><val>1</val><max>2</max></specificattribute>")]
-    [InlineData("<specificattribute><name>AGI</name><val>1</val><aug>1</aug></specificattribute>")]
-    [InlineData("<specificattribute><name>AGI</name><val>1</val><affectbase /></specificattribute>")]
+    [InlineData("<specificattribute><name>ESS</name></specificattribute>")]
+    [InlineData("<specificattribute><name>ESS</name><val>Rating</val></specificattribute>")]
+    [InlineData("<specificattribute><name>ESS</name><val>1</val><affectbase /></specificattribute>")]
+    [InlineData("<specificattribute><name>AGI</name></specificattribute>")]
+    [InlineData("<specificattribute><name>AGI</name><max>8-natural</max></specificattribute>")]
+    [InlineData("<specificattribute><name>AGI</name><val>1</val><val>2</val></specificattribute>")]
+    [InlineData("<specificattribute><name>AGI</name><val>1</val><foo>1</foo></specificattribute>")]
+    [InlineData("<specificattribute><name>AGI</name><val>x</val></specificattribute>")]
+    [InlineData("<specificattribute><name>AGI</name><val>1</val><affectbase><x /></affectbase></specificattribute>")]
     [InlineData("<specificattribute><name>AGI</name><name>REA</name><val>1</val></specificattribute>")]
     [InlineData("<specificattribute><name>XYZ</name><val>1</val></specificattribute>")]
     public void SpecificAttributeVariantsStayBlocked(string bonusXml)
@@ -1496,6 +1501,69 @@ public sealed class CyberwareTests
         Assert.Equal(before, session.Xml.ToString());
     }
 
+    [Theory]
+    [InlineData("<specificattribute><name>AGI</name><val>Rating</val><min>1</min><max>2</max><aug>Rating</aug></specificattribute>", "AGI", "", 1, 2, 1)]
+    [InlineData("<specificattribute><name precedence=\"2\">MAG</name><val>Rating</val><affectbase>yes</affectbase></specificattribute>", "MAGBase", "precedence2", 0, 0, 0)]
+    public void SpecificAttributeLimitsAndBaseCreateLegacyImprovementsAndRecalculate(
+        string bonusXml, string improvedName, string unique, int min, int max, int augMax)
+    {
+        var session = NewSession();
+        var catalog = CyberwareCatalog.FromXml(AttributeCatalog(bonusXml), BiowareCatalogXml);
+        var manager = new CyberwareManager(session, catalog);
+        var added = manager.Add(CyberwareSource.Cyberware, "Odd", "Standard", 1);
+        Assert.True(added.Success, added.Error);
+        var item = added.Item!;
+        XElement Own() => session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Single(i => i.Element("sourcename")?.Value == item.Guid);
+
+        var own = Own();
+        Assert.Equal("Attribute", own.Element("improvementttype")!.Value);
+        Assert.Equal(improvedName, own.Element("improvedname")!.Value);
+        Assert.Equal("0", own.Element("val")!.Value);
+        Assert.Equal("1", own.Element("aug")!.Value);
+        Assert.Equal(min.ToString(), own.Element("min")!.Value);
+        Assert.Equal(max.ToString(), own.Element("max")!.Value);
+        Assert.Equal(augMax.ToString(), own.Element("augmax")!.Value);
+        Assert.Equal(unique, own.Element("unique")!.Value);
+
+        Assert.True(manager.SetRating(item, 3).Success);
+        own = Own();
+        Assert.Equal("3", own.Element("aug")!.Value);
+        Assert.Equal(augMax == 0 ? "0" : "3", own.Element("augmax")!.Value);
+
+        Assert.True(manager.Remove(item.Guid).Success);
+        Assert.DoesNotContain(session.Xml.Root!.Element("improvements")!.Elements("improvement"), i => i.Element("sourcename")?.Value == item.Guid);
+    }
+
+    [Theory]
+    [InlineData("<specificattribute><name>ESS</name><val>-1</val></specificattribute>")]
+    [InlineData("<specificattribute><name>ESS</name><max>-1</max><val>-1</val></specificattribute>")]
+    public void SpecificEssenceCreatesEssenceImprovement(string bonusXml)
+    {
+        var session = NewSession();
+        var manager = new CyberwareManager(session, CyberwareCatalog.FromXml(AttributeCatalog(bonusXml), BiowareCatalogXml));
+        var added = manager.Add(CyberwareSource.Cyberware, "Odd", "Standard", 1);
+        Assert.True(added.Success, added.Error);
+        var own = session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Single(i => i.Element("sourcename")?.Value == added.Item!.Guid);
+        Assert.Equal("Essence", own.Element("improvementttype")!.Value);
+        Assert.Equal("-1", own.Element("val")!.Value);
+        Assert.Equal(string.Empty, own.Element("improvedname")!.Value);
+        Assert.Equal("0", own.Element("max")!.Value);
+        Assert.True(manager.Remove(added.Item!.Guid).Success);
+        Assert.DoesNotContain(session.Xml.Root!.Element("improvements")!.Elements("improvement"), i => i.Element("sourcename")?.Value == added.Item!.Guid);
+    }
+
+    private static string AttributeCatalog(string bonusXml) => $$"""
+        <chummer>
+          <grades><grade><name>Standard</name><ess>1</ess><cost>1</cost><avail>0</avail><source>SR4</source></grade></grades>
+          <categories><category>Headware</category></categories>
+          <cyberwares>
+            <cyberware><name>Odd</name><category>Headware</category><rating>3</rating><ess>0</ess><capacity>0</capacity><avail>0</avail><cost>1</cost><source>SR4</source><page>1</page>
+              <bonus>{{bonusXml}}</bonus></cyberware>
+          </cyberwares>
+        </chummer>
+        """;
     [Fact]
     public void InitiativeBonusesCreateLegacyImprovementsAndRecalculate()
     {
