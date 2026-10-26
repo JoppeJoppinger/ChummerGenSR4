@@ -202,7 +202,7 @@ public static class CareerManager
             return false;
 
         var entry = ParseExpenseElement(target);
-        if (entry is null)
+        if (entry is null || !IsManualEntry(entry))
             return false;
 
         if (entry.Type == ExpenseType.Karma)
@@ -239,8 +239,11 @@ public static class CareerManager
             return false;
 
         var entry = ParseExpenseElement(target);
-        if (entry is null)
+        if (entry is null || entry.Undo is null)
             return false;
+
+        if (!IsManualEntry(entry))
+            newAmount = entry.Amount;
 
         var delta = newAmount - entry.Amount;
         if (entry.Type == ExpenseType.Karma)
@@ -272,6 +275,11 @@ public static class CareerManager
 
         return true;
     }
+
+    // Nur manuelle Buchungen sind rücknehmbar/änderbar; andere Undo-Typen würden Charakterdaten zurückdrehen (nicht portiert).
+    private static bool IsManualEntry(ExpenseLogEntry entry) => entry.Undo is { } undo && (entry.Type == ExpenseType.Karma
+        ? undo.KarmaType is KarmaExpenseType.ManualAdd or KarmaExpenseType.ManualSubtract
+        : undo.NuyenType is NuyenExpenseType.ManualAdd or NuyenExpenseType.ManualSubtract);
 
     private static void AddRawExpense(CharacterSession session, ExpenseLogEntry entry)
     {

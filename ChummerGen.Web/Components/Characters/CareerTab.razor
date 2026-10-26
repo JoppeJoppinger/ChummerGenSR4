@@ -308,19 +308,22 @@
 
         try
         {
+            var reason = formRefund && activeAction != TransactionAction.NuyenSpent
+                ? $"{formReason} ({RefundLabel})"
+                : formReason;
             switch (activeAction)
             {
                 case TransactionAction.KarmaGained:
-                    CareerManager.AddKarmaExpense(Session, formAmount, formReason, DateTime.Now, isSpent: false, refund: formRefund);
+                    CareerManager.AddKarmaExpense(Session, formAmount, reason, DateTime.Now, isSpent: false, refund: formRefund);
                     break;
                 case TransactionAction.KarmaSpent:
-                    CareerManager.AddKarmaExpense(Session, formAmount, formReason, DateTime.Now, isSpent: true, refund: formRefund);
+                    CareerManager.AddKarmaExpense(Session, formAmount, reason, DateTime.Now, isSpent: true, refund: formRefund);
                     break;
                 case TransactionAction.NuyenGained:
-                    CareerManager.AddNuyenExpense(Session, formAmount, formReason, DateTime.Now, isSpent: false, refund: formRefund);
+                    CareerManager.AddNuyenExpense(Session, formAmount, reason, DateTime.Now, isSpent: false, refund: formRefund);
                     break;
                 case TransactionAction.NuyenSpent:
-                    CareerManager.AddNuyenExpense(Session, formAmount, formReason, DateTime.Now, isSpent: true, refund: formRefund);
+                    CareerManager.AddNuyenExpense(Session, formAmount, reason, DateTime.Now, isSpent: true);
                     break;
             }
 
@@ -337,7 +340,8 @@
         errorMessage = null;
         try
         {
-            CareerManager.UndoExpense(Session, id);
+            if (!CareerManager.UndoExpense(Session, id))
+                errorMessage = "Diese Buchung kann nicht rückgängig gemacht werden.";
         }
         catch (Exception ex)
         {

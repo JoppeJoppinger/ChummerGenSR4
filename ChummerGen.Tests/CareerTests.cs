@@ -150,6 +150,54 @@ public sealed class CareerTests
         Assert.Empty(CareerManager.GetExpenses(session));
     }
 
+    private static void AddRaw(CharacterSession session, ExpenseLogEntry e)
+    {
+        var el = new XElement("expense", new XElement("guid", e.Guid.ToString()), new XElement("date", e.Date.ToString("s")),
+            new XElement("amount", e.Amount), new XElement("reason", e.Reason), new XElement("type", e.Type.ToString()), new XElement("refund", e.Refund.ToString()));
+        if (e.Undo is not null)
+            el.Add(new XElement("undo", new XElement("karmatype", e.Undo.KarmaType.ToString()), new XElement("nuyentype", e.Undo.NuyenType.ToString()), new XElement("objectid", e.Undo.ObjectId), new XElement("qty", 0), new XElement("extra")));
+        session.Xml.Root!.Element("expenses")!.Add(el);
+    }
+
+    [Fact]
+    public void UndoExpense_RejectsEntriesWithoutManualUndo()
+    {
+        var session = new CharacterSession(ChumSerializer.Parse(SampleCharacterXml));
+        var noUndo = new ExpenseLogEntry(Guid.NewGuid(), DateTime.Now, -3, "Legacy", ExpenseType.Karma);
+        var skill = new ExpenseLogEntry(Guid.NewGuid(), DateTime.Now, -2, "Attr", ExpenseType.Karma, false,
+            new ExpenseUndo(KarmaExpenseType.ImproveAttribute, NuyenExpenseType.AddCyberware, "BOD"));
+        AddRaw(session, noUndo);
+        AddRaw(session, skill);
+
+        Assert.False(CareerManager.UndoExpense(session, noUndo.Guid));
+        Assert.False(CareerManager.UndoExpense(session, skill.Guid));
+        Assert.Equal(10, CareerManager.GetKarma(session));
+        Assert.Equal(2, CareerManager.GetExpenses(session).Count);
+    }
+
+    [Fact]
+    public void EditExpense_ChangesAmountOnlyForManualEntries()
+    {
+        var session = new CharacterSession(ChumSerializer.Parse(SampleCharacterXml));
+        var manual = CareerManager.AddKarmaExpense(session, 5, "Reward");
+        var other = new ExpenseLogEntry(Guid.NewGuid(), DateTime.Now, -2, "Attr", ExpenseType.Karma, false,
+            new ExpenseUndo(KarmaExpenseType.ImproveAttribute, NuyenExpenseType.AddCyberware, "BOD"));
+        AddRaw(session, other);
+        var noUndo = new ExpenseLogEntry(Guid.NewGuid(), DateTime.Now, 1, "Legacy", ExpenseType.Karma);
+        AddRaw(session, noUndo);
+
+        Assert.True(CareerManager.EditExpense(session, manual.Guid, 8, "Neu", new DateTime(2020, 1, 2)));
+        Assert.Equal(18, CareerManager.GetKarma(session));
+
+        Assert.True(CareerManager.EditExpense(session, other.Guid, 99, "Umbenannt", new DateTime(2020, 1, 2)));
+        Assert.Equal(18, CareerManager.GetKarma(session));
+        var edited = CareerManager.GetExpenses(session).Single(e => e.Guid == other.Guid);
+        Assert.Equal(-2, edited.Amount);
+        Assert.Equal("Umbenannt", edited.Reason);
+
+        Assert.False(CareerManager.EditExpense(session, noUndo.Guid, 5, "x", DateTime.Now));
+    }
+
     [Fact]
     public void CareerTotals_AccuratelySumEarnedAmountsExcludingRefunds()
     {
