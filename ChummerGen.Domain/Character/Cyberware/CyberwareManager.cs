@@ -387,12 +387,15 @@ public sealed partial class CyberwareManager
         return string.IsNullOrWhiteSpace(requested) ? "Standard" : requested;
     }
 
+    private bool _suiteMode;
+
     private string? ValidatePlugin(CyberwareItem parent, CyberwareCatalogEntry entry, CyberwareItem candidate)
     {
         if (!entry.Capacity.Contains('['))
             return $"'{entry.Name}' ist kein Plugin (Kapazität ohne Klammern).";
         var allowed = parent.Subsystems.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (!allowed.Contains(entry.Category, StringComparer.Ordinal))
+        // Legacy suite creation attaches plugins directly and never consults the parent subsystem list.
+        if (!_suiteMode && !allowed.Contains(entry.Category, StringComparer.Ordinal))
             return $"'{parent.DisplayNameShort}' akzeptiert keine Plugins der Kategorie '{entry.Category}'.";
         if (_session.Settings.EnforceCapacity && parent.HasCapacity && candidate.PluginCapacity > parent.CapacityRemaining)
             return $"Nicht genug Kapazität in '{parent.DisplayNameShort}' (frei: {parent.CapacityRemaining}, benötigt: {candidate.PluginCapacity}).";

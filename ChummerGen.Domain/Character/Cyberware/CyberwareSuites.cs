@@ -4,7 +4,7 @@ using ChummerGen.Domain.Chum;
 
 namespace ChummerGen.Domain.Character.Cyberware;
 
-public sealed record CyberwareSuiteItem(string Name, int Rating, IReadOnlyList<CyberwareSuiteItem> Children);
+public sealed record CyberwareSuiteItem(string Name, int Rating, IReadOnlyList<CyberwareSuiteItem> Children, string? ForcedSide = null);
 
 // Blocker is non-null when the suite uses semantics that are not ported; such a suite is never applied.
 public sealed record CyberwareSuite(
@@ -46,7 +46,7 @@ public sealed partial class CyberwareManager
     public int CountSuiteSides(CyberwareSuite suite) => CountSuiteSides(suite.Source, suite.Items);
 
     private int CountSuiteSides(CyberwareSource source, IReadOnlyList<CyberwareSuiteItem> items) =>
-        items.Sum(i => (Catalog.Find(source, i.Name) is { } entry && RequiresSide(entry) ? 1 : 0) + CountSuiteSides(source, i.Children));
+        items.Sum(i => (i.ForcedSide is null && Catalog.Find(source, i.Name) is { } entry && RequiresSide(entry) ? 1 : 0) + CountSuiteSides(source, i.Children));
 
     // All-or-nothing: the suite is built on a clone of the document and only appended to the real one when every piece succeeded.
     // Sides are consumed in suite order by every piece that needs one.
@@ -66,7 +66,7 @@ public sealed partial class CyberwareManager
         var sideQueue = new Queue<string>(sides ?? []);
 
         var staged = new CharacterSession(new ChumDocument(new XDocument(_session.Xml)), _session.Settings);
-        var stagedManager = new CyberwareManager(staged, Catalog);
+        var stagedManager = new CyberwareManager(staged, Catalog) { _suiteMode = true };
         var stagedRoot = staged.Xml.Root!;
         var itemsBefore = stagedRoot.Element("cyberwares")?.Elements("cyberware").Count() ?? 0;
         var weaponsBefore = stagedRoot.Element("weapons")?.Elements("weapon").Count() ?? 0;
@@ -107,7 +107,8 @@ public sealed partial class CyberwareManager
     private string? AddSuiteItem(CyberwareSuite suite, CyberwareSource source, CyberwareSuiteItem item, string? parentGuid, Queue<string> sides)
     {
         var needsSide = Catalog.Find(source, item.Name) is { } sideEntry && RequiresSide(sideEntry);
-        var result = Add(source, item.Name, suite.GradeName, item.Rating, parentGuid, null, needsSide ? sides.Dequeue() : null);
+        var side = item.ForcedSide ?? (needsSide ? sides.Dequeue() : null);
+        var result = Add(source, item.Name, suite.GradeName, item.Rating, parentGuid, null, side);
         if (!result.Success)
             return $"'{item.Name}': {result.Error}";
         // Legacy marks every suite piece, including plugins, as Suite (0.9 cost, -0.1 essence multiplier).
@@ -162,8 +163,11 @@ public sealed partial class CyberwareManager
 
             var rating = 0;
             string? error;
-            if (itemNode.Element("name")!.Attributes().Any())
-                error = $"'{itemName}' verwendet ein festes Auswahlattribut (select); das wird nicht unterstützt.";
+            var nameAttributes = itemNode.Element("name")!.Attributes().ToList();
+            if (nameAttributes.Count > 0 && !(nameAttributes.Count == 1 && nameAttributes[0].Name.LocalName == "select"
+                && (nameAttributes[0].Value is "Left" or "Right")
+                && Catalog.Find(source, itemName) is { } sideEntry && RequiresSide(sideEntry)))
+                error = $"'{itemName}' verwendet ein nicht unterstütztes Auswahlattribut (nur select=Left/Right bei seitenabhängigen Teilen).";
             else if (itemNode.Elements().FirstOrDefault(e => e.Name.LocalName is not ("name" or "rating") && e.Name.LocalName != containerTag) is { } extra)
                 error = $"'{itemName}' enthält das nicht unterstützte Element '{extra.Name.LocalName}' (z. B. Grad-Überschreibung).";
             else if (itemNode.Element("rating") is { } ratingNode
@@ -180,7 +184,7 @@ public sealed partial class CyberwareManager
 
             var children = new List<CyberwareSuiteItem>();
             firstBlocker ??= ValidateSuiteNode(itemNode, suiteName, ["name", "rating", containerTag], containerTag, itemTag, source, gradeName, children);
-            into.Add(new CyberwareSuiteItem(itemName, rating, children));
+            into.Add(new CyberwareSuiteItem(itemName, rating, children, nameAttributes.Count == 1 ? nameAttributes[0].Value : null));
         }
 
         return firstBlocker;

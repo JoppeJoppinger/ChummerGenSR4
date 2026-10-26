@@ -1423,6 +1423,38 @@ public sealed class CyberwareTests
     }
 
     [Theory]
+    [InlineData("Saeder-Krupp Höllensturm Artillery Suite")]
+    [InlineData("Saeder-Krupp Höllensturm Artillery Suite Overwatch")]
+    [InlineData("NeoNET Streetwise Courier Suite")]
+    [InlineData("Urban Gunfighter")]
+    [InlineData("Urban Gunfighter Aleph")]
+    public void SuiteWithForcedSideAppliesWithoutSideChoice(string suiteName)
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+
+        var session = NewSession();
+        var manager = new CyberwareManager(session, CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml")),
+            File.ReadAllText(Path.Combine(data, "weapons.xml"))));
+        var suite = Assert.Single(manager.ListSuites(CyberwareSource.Cyberware), s => s.Name == suiteName);
+        Assert.Null(suite.Blocker);
+
+        var needed = manager.CountSuiteSides(suite);
+        Assert.False(manager.ApplySuite(CyberwareSource.Cyberware, suiteName, Enumerable.Repeat("Left", needed + 1).ToList()).Success);
+        var applied = manager.ApplySuite(CyberwareSource.Cyberware, suiteName, Enumerable.Repeat("Right", needed).ToList());
+        Assert.True(applied.Success, applied.Error);
+
+        var forced = suite.Items.Where(i => i.ForcedSide is not null).ToList();
+        Assert.NotEmpty(forced);
+        foreach (var item in forced)
+            Assert.Contains(session.Xml.Root!.Element("cyberwares")!.Elements("cyberware"),
+                c => c.Element("name")?.Value == item.Name && c.Element("location")?.Value == item.ForcedSide);
+    }
+
+    [Theory]
     [InlineData("Wired Reflexes", 1, "1", "1")]
     [InlineData("Wired Reflexes", 3, "3", "3")]
     [InlineData("Boosted Reflexes", 1, "1", "0")]
@@ -1713,7 +1745,7 @@ public sealed class CyberwareTests
             <suite><name>Second Hand Set</name><grade>StandardSecondHand</grade><cyberwares><cyberware><name>Commlink</name></cyberware></cyberwares></suite>
             <suite><name>Razor Broken Set</name><grade>Standard</grade><cyberwares>
               <cyberware><name>Hand Razors</name></cyberware>
-              <cyberware><name>Cyberears</name><rating>2</rating><cyberwares><cyberware><name>Commlink</name></cyberware></cyberwares></cyberware>
+              <cyberware><name>Cyberears</name><rating>2</rating><cyberwares><cyberware><name>Audio Enhancement</name><rating>9</rating></cyberware></cyberwares></cyberware>
             </cyberwares></suite>
             <suite><name>Range Set</name><grade>Standard</grade><cyberwares>
               <cyberware><name>Commlink</name></cyberware>
@@ -1888,7 +1920,7 @@ public sealed class CyberwareTests
         var result = manager.ApplySuite(CyberwareSource.Cyberware, "Razor Broken Set");
         Assert.False(result.Success);
         Assert.Contains("Razor Broken Set", result.Error);
-        Assert.Contains("Commlink", result.Error);
+        Assert.Contains("Audio Enhancement", result.Error);
         Assert.Equal(before, session.Serialize());
         Assert.Single(session.Xml.Root!.Element("weapons")!.Elements("weapon"));
     }
