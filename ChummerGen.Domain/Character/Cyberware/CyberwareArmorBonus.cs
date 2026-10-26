@@ -53,6 +53,28 @@ public sealed partial class CyberwareManager
         && bonus.Elements().Count(e => e.Name.LocalName == "armor") == 1
         && bonus.Elements().Count(e => e.Name.LocalName == "damageresistance") == 1;
 
+    private static bool TryGetArmorAndSimpleBonusValues(
+        XElement? bonus,
+        int rating,
+        out IReadOnlyDictionary<string, int> armor,
+        out IReadOnlyList<SimpleBonus> simpleBonuses)
+    {
+        armor = new Dictionary<string, int>();
+        simpleBonuses = [];
+        if (bonus is not { HasAttributes: false }
+            || bonus.Elements().Count(e => e.Name.LocalName == "armor") != 1)
+            return false;
+
+        var armorNode = bonus.Element("armor")!;
+        var armorOnly = new XElement("bonus", new XElement(armorNode));
+        var remaining = new XElement("bonus", bonus.Elements().Where(e => e != armorNode).Select(e => new XElement(e)));
+        if (!TryGetArmorBonusValues(armorOnly, rating, out armor)
+            || !TryGetSimpleBonuses(remaining, rating, out simpleBonuses)
+            || simpleBonuses.Count == 0)
+            return false;
+        return true;
+    }
+
     private static bool TryGetArmorAndDamageResistanceBonusValues(
         XElement? bonus,
         int rating,

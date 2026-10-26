@@ -599,40 +599,6 @@ public sealed class CyberwareTests
         Assert.Equal(before, session.Xml.ToString(SaveOptions.DisableFormatting));
     }
 
-    [Theory]
-    [InlineData("Braveheart", "armor, specificattribute")]
-    public void UnsupportedBonusTypesFailClosedAccuratelyAndDoNotMutateXml(string itemName, string expectedBonusTags)
-    {
-        var data = FindDirectory(Path.Combine("bin", "data"));
-        if (data is null || !File.Exists(Path.Combine(data, "cyberware.xml")) || !File.Exists(Path.Combine(data, "bioware.xml")))
-            return;
-
-        var catalog = CyberwareCatalog.FromXml(
-            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
-            File.ReadAllText(Path.Combine(data, "bioware.xml")),
-            File.ReadAllText(Path.Combine(data, "weapons.xml")),
-            File.ReadAllText(Path.Combine(data, "skills.xml")));
-
-        var entry = catalog.Entries(CyberwareSource.Cyberware).FirstOrDefault(e => e.Name == itemName)
-            ?? catalog.Entries(CyberwareSource.Bioware).FirstOrDefault(e => e.Name == itemName);
-        Assert.NotNull(entry);
-
-        var session = NewSession();
-        var beforeXml = session.Serialize();
-        var manager = new CyberwareManager(session, catalog);
-
-        var blocker = manager.GetAddBlocker(entry);
-        Assert.NotNull(blocker);
-        foreach (var tag in expectedBonusTags.Split(',', StringSplitOptions.TrimEntries))
-            Assert.Contains(tag, blocker);
-
-        var rating = entry.Node.Element("rating") is { } r ? int.Parse(r.Value) : 0;
-        var result = manager.Add(entry.Source, entry.Name, "Standard", rating);
-        Assert.False(result.Success);
-        Assert.Equal(blocker, result.Error);
-        Assert.Equal(beforeXml, session.Serialize());
-    }
-
     [Fact]
     public void RatingThresholdOffsetBonusMatchesRealBiowareCatalogAndRecalculates()
     {
@@ -1138,6 +1104,38 @@ public sealed class CyberwareTests
         Assert.Equal("True", groupImprovement.Element("addtorating")!.Value);
         Assert.Equal("Magical Active,Resonance Active,Social Active,Technical Active,Vechicle Active",
             groupImprovement.Element("exclude")!.Value);
+    }
+
+    [Fact]
+    public void BraveheartCreatesArmorAndRepeatedAttributeImprovements()
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+        var catalog = CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml")),
+            File.ReadAllText(Path.Combine(data, "weapons.xml")));
+        var entry = Assert.Single(catalog.Entries(CyberwareSource.Bioware), e => e.Name == "Braveheart");
+        var session = NewSession();
+        var manager = new CyberwareManager(session, catalog);
+        Assert.Null(manager.GetAddBlocker(entry));
+
+        var added = manager.Add(CyberwareSource.Bioware, entry.Name, "Standard", 0);
+        Assert.True(added.Success, added.Error);
+        var own = session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Where(i => i.Element("sourcename")?.Value == added.Item!.Guid).ToList();
+        Assert.Equal(3, own.Count);
+        Assert.Equal("2", Assert.Single(own, i => i.Element("improvementttype")?.Value == "ImpactArmor").Element("val")!.Value);
+        var will = Assert.Single(own, i => i.Element("improvedname")?.Value == "WIL");
+        Assert.Equal("1", will.Element("aug")!.Value);
+        var intuition = Assert.Single(own, i => i.Element("improvedname")?.Value == "INT");
+        Assert.Equal("-1", intuition.Element("aug")!.Value);
+
+        var guid = added.Item!.Guid;
+        Assert.True(manager.Remove(guid).Success);
+        Assert.DoesNotContain(session.Xml.Root!.Element("improvements")!.Elements("improvement"),
+            i => i.Element("sourcename")?.Value == guid);
     }
 
     [Theory]

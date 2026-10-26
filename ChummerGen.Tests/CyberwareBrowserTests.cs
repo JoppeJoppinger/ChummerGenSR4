@@ -17,7 +17,7 @@ public sealed class CyberwareBrowserTests : PageTest
         """;
 
     [Fact]
-    public async Task Browser_AddsEditsPersistsAndBlocksUnsupportedCyberware()
+    public async Task Browser_AddsEditsPersistsAndAppliesSelectedSkillBonus()
     {
         await using var app = new BrowserTestApplicationFactory();
         var baseAddress = await app.StartAsync();
@@ -84,22 +84,26 @@ public sealed class CyberwareBrowserTests : PageTest
         await Expect(Page.Locator(".cyber-detail-pane textarea")).ToHaveValueAsync(persistedNote);
 
         await Page.Locator(".cyber-add-pane select").Nth(0).SelectOptionAsync("Bioware");
-        var blockerPicker = Page.Locator(".cyber-add-pane select").Nth(2);
-        await blockerPicker.SelectOptionAsync("Braveheart");
-        var blocker = Page.Locator(".cyber-add-pane .text-warning");
-        await Expect(blocker).ToContainTextAsync("hat Boni");
-        await Expect(blocker).ToContainTextAsync("noch nicht portiert");
+        var addPicker = Page.Locator(".cyber-add-pane select").Nth(2);
+        await addPicker.SelectOptionAsync("Reflex Recorder (Skill)");
+        var skillPicker = Page.Locator(".cyber-add-pane select").Nth(4);
+        await Expect(skillPicker).ToContainTextAsync("Blades");
         await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Hinzufügen", Exact = true })).ToBeDisabledAsync();
-        await Expect(Page.Locator(".cyber-table tbody tr")).ToHaveCountAsync(1);
-        await Expect(Page.GetByText("Ungespeicherte Änderungen", new() { Exact = true })).ToHaveCountAsync(0);
+        await skillPicker.SelectOptionAsync("Blades");
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Hinzufügen", Exact = true }).ClickAsync();
+        await Expect(Page.Locator(".cyber-table tbody")).ToContainTextAsync("Reflex Recorder (Skill)");
+        await Expect(Page.Locator(".cyber-table tbody tr")).ToHaveCountAsync(2);
         await Page.GetByRole(AriaRole.Button, new() { Name = "Speichern", Exact = true }).ClickAsync();
         await Expect(Page.GetByText("Änderungen wurden gespeichert.", new() { Exact = true })).ToBeVisibleAsync();
 
         var savedXml = await app.ReadCharacterXmlAsync("Fips Donnerfaust");
         var savedCyberware = XDocument.Parse(savedXml).Root!.Element("cyberwares")!.Elements("cyberware").ToList();
-        var savedItem = Assert.Single(savedCyberware);
-        Assert.Equal("Data Filter", savedItem.Element("name")?.Value);
+        Assert.Equal(2, savedCyberware.Count);
+        var savedItem = Assert.Single(savedCyberware, i => i.Element("name")?.Value == "Data Filter");
         Assert.Equal(persistedNote, savedItem.Element("notes")?.Value);
+        var improvement = Assert.Single(XDocument.Parse(savedXml).Root!.Element("improvements")!.Elements("improvement"),
+            i => i.Element("improvedname")?.Value == "Blades");
+        Assert.Equal("Skill", improvement.Element("improvementttype")?.Value);
     }
 
     private static string NewTestEmail() => $"browser-{Guid.NewGuid():N}@example.test";

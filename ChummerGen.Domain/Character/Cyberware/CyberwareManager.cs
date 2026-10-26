@@ -91,6 +91,8 @@ public sealed partial class CyberwareManager
             return true;
         if (TryGetMatrixInitiativePassAddValue(bonus, rating, out _))
             return true;
+        if (TryGetArmorAndSimpleBonusValues(bonus, rating, out _, out _))
+            return true;
         if (HasBoneDensityBonusShape(bonus))
             return TryGetBoneDensityBonusValues(bonus, rating, out _, out _);
         if (HasOnlyArmorAndDamageResistance(bonus))
@@ -207,6 +209,11 @@ public sealed partial class CyberwareManager
                 ApplyMatrixInitiativePass(item, parentMatrixInitiativePass);
             else if (TryGetMatrixInitiativePassAddValue(item.Element("bonus"), rating, out var parentMatrixPass))
                 ApplyMatrixInitiativePassAdd(item, parentMatrixPass);
+            else if (TryGetArmorAndSimpleBonusValues(item.Element("bonus"), rating, out var parentCombinedArmor, out var parentSimpleBonuses))
+            {
+                ApplyArmorBonus(item, parentCombinedArmor);
+                ApplySimpleBonuses(item, parentSimpleBonuses);
+            }
             else if (TryGetArmorAndDamageResistanceBonusValues(item.Element("bonus"), rating, out var parentArmorValues, out var parentResistance))
             {
                 ApplyArmorBonus(item, parentArmorValues);
@@ -243,6 +250,11 @@ public sealed partial class CyberwareManager
             ApplyMatrixInitiativePass(item, matrixInitiativePass);
         else if (TryGetMatrixInitiativePassAddValue(item.Element("bonus"), rating, out var matrixPass))
             ApplyMatrixInitiativePassAdd(item, matrixPass);
+        else if (TryGetArmorAndSimpleBonusValues(item.Element("bonus"), rating, out var combinedArmor, out var simpleBonuses))
+        {
+            ApplyArmorBonus(item, combinedArmor);
+            ApplySimpleBonuses(item, simpleBonuses);
+        }
         else if (TryGetArmorAndDamageResistanceBonusValues(item.Element("bonus"), rating, out var armorValues, out var damageResistance))
         {
             ApplyArmorBonus(item, armorValues);
@@ -426,6 +438,7 @@ public sealed partial class CyberwareManager
                     || TryGetMatrixInitiativePassValue(bonus, rating, out _)
                     || TryGetSimpleBonuses(bonus, rating, out _)
                     || TryGetMatrixInitiativePassAddValue(bonus, rating, out _)
+                    || TryGetArmorAndSimpleBonusValues(bonus, rating, out _, out _)
                     || TryGetArmorBonusValues(bonus, rating, out _)
                     || TryGetDamageResistanceBonusValue(bonus, rating, out _)
                     || TryGetArmorAndDamageResistanceBonusValues(bonus, rating, out _, out _)
