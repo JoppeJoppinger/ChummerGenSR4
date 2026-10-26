@@ -76,6 +76,10 @@ public sealed partial class CyberwareManager
         if (entry.Node.Element("bonus") is { HasElements: true } bonusNode
             && !IsSupportedBonus(bonusNode, 1))
             return DescribeUnsupportedBonus(entry.Name, bonusNode);
+        if (RequiresSkillSelection(entry) && GetSelectableSkills(entry).Count == 0)
+            return $"'{entry.Name}' erfordert eine Fertigkeitsauswahl, aber skills.xml bietet keine passende Auswahl.";
+        if (RequiresSkillGroupSelection(entry) && GetSelectableSkillGroups(entry).Count == 0)
+            return $"'{entry.Name}' erfordert eine Fertigkeitsgruppenauswahl, aber skills.xml bietet keine passende Auswahl.";
         return null;
     }
 
@@ -103,7 +107,9 @@ public sealed partial class CyberwareManager
         string? parentGuid = null,
         int? variableCost = null,
         string? side = null,
-        string? selectedAttribute = null)
+        string? selectedAttribute = null,
+        string? selectedSkill = null,
+        string? selectedSkillGroup = null)
     {
         var root = _session.Xml.Root;
         if (root is null)
@@ -162,6 +168,8 @@ public sealed partial class CyberwareManager
         var requiresSide = RequiresSide(entry);
         var requiresText = RequiresText(entry);
         var requiresAttributeSelection = RequiresAttributeSelection(entry);
+        var requiresSkillSelection = RequiresSkillSelection(entry);
+        var requiresSkillGroupSelection = RequiresSkillGroupSelection(entry);
         if (requiresSide && string.IsNullOrWhiteSpace(side))
             return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Auswahl einer Seite (links/rechts).");
         if (requiresText && string.IsNullOrWhiteSpace(side))
@@ -169,6 +177,10 @@ public sealed partial class CyberwareManager
         if (requiresAttributeSelection
             && !TryGetSelectedAttributeBonus(entry.Node.Element("bonus"), rating, selectedAttribute, out _))
             return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Auswahl eines zulässigen Attributs.");
+        if (requiresSkillSelection && !GetSelectableSkills(entry).Contains(selectedSkill, StringComparer.Ordinal))
+            return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Auswahl einer zulässigen Fertigkeit.");
+        if (requiresSkillGroupSelection && !GetSelectableSkillGroups(entry).Contains(selectedSkillGroup, StringComparer.Ordinal))
+            return CyberwareOperationResult.Fail($"'{entry.Name}' erfordert die Auswahl einer zulässigen Fertigkeitsgruppe.");
 
         var item = BuildElement(entry, grade, rating, minRating, maxRating, source, chosenCost);
         if (requiresSide || requiresText)
@@ -209,7 +221,7 @@ public sealed partial class CyberwareManager
             }
             else if (TryGetDamageResistanceBonusValue(item.Element("bonus"), rating, out var parentDamageResistance))
                 ApplyDamageResistanceBonus(item, parentDamageResistance);
-            else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var parentSimple, selectedAttribute))
+            else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var parentSimple, selectedAttribute, selectedSkill, selectedSkillGroup))
                 ApplySimpleBonuses(item, parentSimple);
             children.Add(item);
             return CyberwareOperationResult.Ok(Find(item.Element("guid")!.Value));
@@ -245,7 +257,7 @@ public sealed partial class CyberwareManager
         }
         else if (TryGetDamageResistanceBonusValue(item.Element("bonus"), rating, out var resistance))
             ApplyDamageResistanceBonus(item, resistance);
-        else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var simple, selectedAttribute))
+        else if (TryGetSimpleBonuses(item.Element("bonus"), rating, out var simple, selectedAttribute, selectedSkill, selectedSkillGroup))
         {
             if (requiresText)
                 ApplySimpleBonus(item, new SimpleBonus("Text", item.Element("bonus")?.Attribute("unique")?.Value ?? string.Empty, 0, side!.Trim()));

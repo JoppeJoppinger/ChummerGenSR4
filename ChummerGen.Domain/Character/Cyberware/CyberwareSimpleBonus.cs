@@ -7,7 +7,14 @@ namespace ChummerGen.Domain.Character.Cyberware;
 // smartlink, movementpercent, swimpercent, skillwire, lifestylecost and conditionmonitor/physical.
 public sealed partial class CyberwareManager
 {
-    private sealed record SimpleBonus(string Type, string Unique, int Value, string ImprovedName = "", bool AddToRating = false, string ValueElement = "val");
+    private sealed record SimpleBonus(
+        string Type,
+        string Unique,
+        int Value,
+        string ImprovedName = "",
+        bool AddToRating = false,
+        string ValueElement = "val",
+        string Exclude = "");
 
     // Legacy "specificattribute" (not ESS): one <name> plus <val>; the value is stored as the augmented modifier, not "val".
     private static bool TryGetAttributeBonus(XElement element, string bonusUnique, int rating, out SimpleBonus result)
@@ -107,12 +114,64 @@ public sealed partial class CyberwareManager
     public bool RequiresAttributeSelection(CyberwareCatalogEntry entry) =>
         GetSelectableAttributes(entry).Count > 0;
 
+    public IReadOnlyList<string> GetSelectableSkills(CyberwareCatalogEntry entry)
+    {
+        var selection = entry.Node.Element("bonus")?.Element("selectskill");
+        if (!IsSupportedSelectSkill(selection, 1, out _, out _))
+            return [];
+
+        var group = selection!.Attribute("skillgroup")?.Value;
+        var category = selection.Attribute("skillcategory")?.Value;
+        var excludes = SplitSelectionList(selection.Attribute("excludecategory")?.Value);
+        var limitTo = SplitSelectionList(selection.Attribute("limittoskill")?.Value);
+        return Catalog.SkillNodes
+            .Where(skill => skill.Element("exotic") is null)
+            .Where(skill => group is null || skill.Element("skillgroup")?.Value == group)
+            .Where(skill => category is null || skill.Element("category")?.Value == category)
+            .Where(skill => excludes.Count == 0 || !excludes.Contains(skill.Element("category")?.Value, StringComparer.Ordinal))
+            .Where(skill => selection.Attribute("excludeskillgroup")?.Value is not { } excludedGroup
+                || !string.Equals(skill.Element("skillgroup")?.Value, excludedGroup, StringComparison.Ordinal))
+            .Where(skill => limitTo.Count == 0 || limitTo.Contains(skill.Element("name")?.Value, StringComparer.Ordinal))
+            .Select(skill => skill.Element("name")?.Value.Trim() ?? string.Empty)
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    public IReadOnlyList<string> GetSelectableSkillGroups(CyberwareCatalogEntry entry)
+    {
+        var selection = entry.Node.Element("bonus")?.Element("selectskillgroup");
+        if (!IsSupportedSelectSkillGroup(selection, 1, out _, out _))
+            return [];
+        var excludes = SplitSelectionList(selection!.Attribute("excludecategory")?.Value);
+        return Catalog.SkillGroupNames
+            .Where(group => excludes.Count == 0 || Catalog.SkillNodes.Any(skill =>
+                skill.Element("skillgroup")?.Value == group
+                && !excludes.Contains(skill.Element("category")?.Value, StringComparer.Ordinal)))
+            .OrderBy(group => group, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    public bool RequiresSkillSelection(CyberwareCatalogEntry entry) =>
+        entry.Node.Element("bonus")?.Element("selectskill") is { } selection
+        && IsSupportedSelectSkill(selection, 1, out _, out _);
+
+    public bool RequiresSkillGroupSelection(CyberwareCatalogEntry entry) =>
+        entry.Node.Element("bonus")?.Element("selectskillgroup") is { } selection
+        && IsSupportedSelectSkillGroup(selection, 1, out _, out _);
+
+    private static List<string> SplitSelectionList(string? text) =>
+        (text ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
     // One or more supported tags in a single <bonus>; each tag must create a distinct improvement.
     private static bool TryGetSimpleBonuses(
         XElement? bonus,
         int rating,
         out IReadOnlyList<SimpleBonus> results,
-        string? selectedAttribute = null)
+        string? selectedAttribute = null,
+        string? selectedSkill = null,
+        string? selectedSkillGroup = null)
     {
         results = [];
         if (bonus is null || !bonus.HasElements
@@ -132,6 +191,30 @@ public sealed partial class CyberwareManager
         var list = new List<SimpleBonus>();
         foreach (var element in elements)
         {
+            if (element.Name.LocalName == "selectskill")
+            {
+                if (!IsSupportedSelectSkill(element, rating, out var selectedSkillBonuses, out _))
+                    return false;
+                if (selectedSkill is not null)
+                {
+                    if (!TryGetSelectedSkillBonuses(element, bonusUnique, rating, selectedSkill, out var skillBonuses))
+                        return false;
+                    list.AddRange(skillBonuses);
+                }
+                continue;
+            }
+            if (element.Name.LocalName == "selectskillgroup")
+            {
+                if (!IsSupportedSelectSkillGroup(element, rating, out _, out var excludedCategory))
+                    return false;
+                if (selectedSkillGroup is not null)
+                {
+                    if (!TryGetSelectedSkillGroupBonus(element, bonusUnique, rating, selectedSkillGroup, excludedCategory, out var skillGroupBonus))
+                        return false;
+                    list.Add(skillGroupBonus);
+                }
+                continue;
+            }
             if (element.Name.LocalName == "selectattribute")
             {
                 if (!IsSupportedSelectAttribute(element, rating, out _, out var included, out var excluded))
@@ -152,9 +235,105 @@ public sealed partial class CyberwareManager
             list.Add(single);
         }
 
-        if (list.Select(b => (b.Type, b.Unique, b.ImprovedName)).Distinct().Count() != list.Count)
+        if (list.Select(b => (b.Type, b.Unique, b.ImprovedName, b.ValueElement)).Distinct().Count() != list.Count)
             return false;
         results = list;
+        return true;
+    }
+
+    private static bool IsSupportedSelectSkill(
+        XElement? element,
+        int rating,
+        out IReadOnlyList<SimpleBonus> improvements,
+        out string? excludedSkillGroup)
+    {
+        improvements = [];
+        excludedSkillGroup = null;
+        if (element is not { HasElements: true }
+            || element.Attributes().Any(a => a.Name.LocalName is not ("skillgroup" or "skillcategory" or "excludecategory" or "excludeskillgroup" or "limittoskill"))
+            || element.Elements().Any(e => e.Name.LocalName is not ("val" or "max" or "applytorating"))
+            || element.Elements("val").Count() > 1 || element.Elements("max").Count() > 1
+            || element.Elements("applytorating").Count() > 1
+            || element.Elements().Any(e => e.HasAttributes || e.HasElements)
+            || element.Nodes().Any(n => n is XText t && !string.IsNullOrWhiteSpace(t.Value)))
+            return false;
+
+        var filterAttributes = element.Attributes().Count(a =>
+            a.Name.LocalName is "skillgroup" or "skillcategory" or "excludecategory" or "excludeskillgroup" or "limittoskill");
+        if (filterAttributes > 1)
+            return false;
+        excludedSkillGroup = element.Attribute("excludeskillgroup")?.Value;
+
+        var applyToRating = element.Element("applytorating");
+        if (applyToRating is not null && applyToRating.Value is not ("yes" or "no"))
+            return false;
+        var list = new List<SimpleBonus>();
+        foreach (var valueName in new[] { "val", "max" })
+        {
+            if (element.Element(valueName) is not { } valueNode)
+                continue;
+            if (!TryEvaluateSimpleBonusValue(valueNode.Value, rating, out var value))
+                return false;
+            list.Add(new SimpleBonus("Skill", string.Empty, value, string.Empty,
+                applyToRating?.Value == "yes", valueName));
+        }
+        if (list.Count == 0)
+            return false;
+        improvements = list;
+        return true;
+    }
+
+    private static bool IsSupportedSelectSkillGroup(
+        XElement? element,
+        int rating,
+        out SimpleBonus improvement,
+        out string excludedCategory)
+    {
+        improvement = null!;
+        excludedCategory = string.Empty;
+        if (element is not { }
+            || element.Attributes().Any(a => a.Name.LocalName != "excludecategory")
+            || element.Elements().Any(e => e.Name.LocalName is not ("bonus" or "applytorating"))
+            || element.Elements("bonus").Count() != 1 || element.Elements("applytorating").Count() > 1
+            || element.Nodes().Any(n => n is XText t && !string.IsNullOrWhiteSpace(t.Value))
+            || element.Element("bonus") is not { HasAttributes: false, HasElements: false } bonus
+            || element.Element("applytorating") is { } apply && (apply.HasAttributes || apply.HasElements || apply.Value is not ("yes" or "no"))
+            || !TryEvaluateSimpleBonusValue(bonus.Value, rating, out var value))
+            return false;
+        excludedCategory = element.Attribute("excludecategory")?.Value ?? string.Empty;
+        improvement = new SimpleBonus("SkillGroup", string.Empty, value, string.Empty,
+            element.Element("applytorating")?.Value == "yes",
+            Exclude: excludedCategory);
+        return true;
+    }
+
+    private static bool TryGetSelectedSkillBonuses(
+        XElement element,
+        string unique,
+        int rating,
+        string selectedSkill,
+        out IReadOnlyList<SimpleBonus> improvements)
+    {
+        improvements = [];
+        if (!IsSupportedSelectSkill(element, rating, out var bonuses, out _))
+            return false;
+        var list = bonuses.Select(b => b with { Unique = unique, ImprovedName = selectedSkill }).ToList();
+        improvements = list;
+        return true;
+    }
+
+    private static bool TryGetSelectedSkillGroupBonus(
+        XElement element,
+        string unique,
+        int rating,
+        string selectedSkillGroup,
+        string exclude,
+        out SimpleBonus improvement)
+    {
+        improvement = null!;
+        if (!IsSupportedSelectSkillGroup(element, rating, out var parsed, out _))
+            return false;
+        improvement = parsed with { Unique = unique, ImprovedName = selectedSkillGroup, Exclude = exclude };
         return true;
     }
 
@@ -368,6 +547,7 @@ public sealed partial class CyberwareManager
         improvement.Element(bonus.ValueElement)!.Value = valueText;
         improvement.Element("improvedname")!.Value = bonus.ImprovedName;
         improvement.Element("addtorating")!.Value = bonus.AddToRating ? "True" : "False";
+        improvement.Element("exclude")!.Value = bonus.Exclude;
         improvements.Add(improvement);
     }
 

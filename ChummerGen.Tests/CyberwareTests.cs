@@ -527,7 +527,9 @@ public sealed class CyberwareTests
 
         var catalog = CyberwareCatalog.FromXml(
             File.ReadAllText(Path.Combine(data, "cyberware.xml")),
-            File.ReadAllText(Path.Combine(data, "bioware.xml")));
+            File.ReadAllText(Path.Combine(data, "bioware.xml")),
+            File.ReadAllText(Path.Combine(data, "weapons.xml")),
+            File.ReadAllText(Path.Combine(data, "skills.xml")));
         Assert.Contains(catalog.CyberwareGrades.Grades, g => g.Name == "Alphaware");
 
         var session = new CharacterSession(ChumSerializer.Parse("<character />"));
@@ -547,7 +549,9 @@ public sealed class CyberwareTests
                     variableCost = minC;
                 var result = manager.Add(source, entry.Name, "Standard", rating, variableCost: variableCost,
                     side: manager.RequiresSide(entry) ? "Left" : manager.RequiresText(entry) ? "Text" : null,
-                    selectedAttribute: manager.RequiresAttributeSelection(entry) ? manager.GetSelectableAttributes(entry).First() : null);
+                    selectedAttribute: manager.RequiresAttributeSelection(entry) ? manager.GetSelectableAttributes(entry).First() : null,
+                    selectedSkill: manager.RequiresSkillSelection(entry) ? manager.GetSelectableSkills(entry).First() : null,
+                    selectedSkillGroup: manager.RequiresSkillGroupSelection(entry) ? manager.GetSelectableSkillGroups(entry).First() : null);
                 Assert.True(result.Success, $"{entry.Name}: {result.Error}");
                 var item = result.Item!;
                 var grades = manager.GradesFor(item);
@@ -596,8 +600,7 @@ public sealed class CyberwareTests
     }
 
     [Theory]
-    [InlineData("Reflex Recorder (Skill)", "selectskill")]
-    [InlineData("Reflex Recorder (Skill Group)", "selectskillgroup")]
+    [InlineData("Braveheart", "armor, specificattribute")]
     public void UnsupportedBonusTypesFailClosedAccuratelyAndDoNotMutateXml(string itemName, string expectedBonusTags)
     {
         var data = FindDirectory(Path.Combine("bin", "data"));
@@ -606,7 +609,9 @@ public sealed class CyberwareTests
 
         var catalog = CyberwareCatalog.FromXml(
             File.ReadAllText(Path.Combine(data, "cyberware.xml")),
-            File.ReadAllText(Path.Combine(data, "bioware.xml")));
+            File.ReadAllText(Path.Combine(data, "bioware.xml")),
+            File.ReadAllText(Path.Combine(data, "weapons.xml")),
+            File.ReadAllText(Path.Combine(data, "skills.xml")));
 
         var entry = catalog.Entries(CyberwareSource.Cyberware).FirstOrDefault(e => e.Name == itemName)
             ?? catalog.Entries(CyberwareSource.Bioware).FirstOrDefault(e => e.Name == itemName);
@@ -1067,6 +1072,72 @@ public sealed class CyberwareTests
         Assert.True(manager.Remove(added.Item!.Guid).Success);
         Assert.DoesNotContain(session.Xml.Root!.Element("improvements")!.Elements("improvement"),
             i => i.Element("sourcename")?.Value == added.Item.Guid);
+    }
+
+    [Fact]
+    public void SelectSkillAndSkillGroupHonorCatalogFiltersAndCreateImprovements()
+    {
+        var data = FindDirectory(Path.Combine("bin", "data"));
+        if (data is null)
+            return;
+        var catalog = CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml")),
+            File.ReadAllText(Path.Combine(data, "weapons.xml")),
+            File.ReadAllText(Path.Combine(data, "skills.xml")));
+        var session = NewSession();
+        var manager = new CyberwareManager(session, catalog);
+        var skillEntry = Assert.Single(catalog.Entries(CyberwareSource.Bioware), e => e.Name == "Reflex Recorder (Skill)");
+        var groupEntry = Assert.Single(catalog.Entries(CyberwareSource.Bioware), e => e.Name == "Reflex Recorder (Skill Group)");
+        var skills = manager.GetSelectableSkills(skillEntry);
+        var groups = manager.GetSelectableSkillGroups(groupEntry);
+
+        Assert.Contains("Blades", skills);
+        Assert.DoesNotContain("Arcana", skills);
+        Assert.Contains("Firearms", groups);
+        Assert.DoesNotContain("Conjuring", groups);
+        Assert.Null(manager.GetAddBlocker(skillEntry));
+        Assert.Null(manager.GetAddBlocker(groupEntry));
+
+        var catalogWithoutSkills = CyberwareCatalog.FromXml(
+            File.ReadAllText(Path.Combine(data, "cyberware.xml")),
+            File.ReadAllText(Path.Combine(data, "bioware.xml")),
+            File.ReadAllText(Path.Combine(data, "weapons.xml")));
+        var unavailableManager = new CyberwareManager(session, catalogWithoutSkills);
+        var unavailableBlocker = unavailableManager.GetAddBlocker(skillEntry);
+        Assert.Contains("skills.xml", unavailableBlocker);
+        var unchanged = session.Serialize();
+        Assert.False(unavailableManager.Add(CyberwareSource.Bioware, skillEntry.Name, "Standard", 0, selectedSkill: "Blades").Success);
+        Assert.Equal(unchanged, session.Serialize());
+
+        var before = session.Serialize();
+        Assert.False(manager.Add(CyberwareSource.Bioware, skillEntry.Name, "Standard", 0).Success);
+        Assert.False(manager.Add(CyberwareSource.Bioware, skillEntry.Name, "Standard", 0, selectedSkill: "Arcana").Success);
+        Assert.Equal(before, session.Serialize());
+
+        var skillAdded = manager.Add(CyberwareSource.Bioware, skillEntry.Name, "Standard", 0, selectedSkill: "Blades");
+        Assert.True(skillAdded.Success, skillAdded.Error);
+        var skillGuid = skillAdded.Item!.Guid;
+        var skillImprovement = Assert.Single(session.Xml.Root!.Element("improvements")!.Elements("improvement"),
+            i => i.Element("sourcename")?.Value == skillGuid);
+        Assert.Equal("Skill", skillImprovement.Element("improvementttype")!.Value);
+        Assert.Equal("Blades", skillImprovement.Element("improvedname")!.Value);
+        Assert.Equal("1", skillImprovement.Element("val")!.Value);
+        Assert.Equal("True", skillImprovement.Element("addtorating")!.Value);
+
+        var beforeGroup = session.Serialize();
+        Assert.False(manager.Add(CyberwareSource.Bioware, groupEntry.Name, "Standard", 0, selectedSkillGroup: "Conjuring").Success);
+        Assert.Equal(beforeGroup, session.Serialize());
+        var groupAdded = manager.Add(CyberwareSource.Bioware, groupEntry.Name, "Standard", 0, selectedSkillGroup: "Firearms");
+        Assert.True(groupAdded.Success, groupAdded.Error);
+        var groupImprovement = Assert.Single(session.Xml.Root!.Element("improvements")!.Elements("improvement"),
+            i => i.Element("sourcename")?.Value == groupAdded.Item!.Guid);
+        Assert.Equal("SkillGroup", groupImprovement.Element("improvementttype")!.Value);
+        Assert.Equal("Firearms", groupImprovement.Element("improvedname")!.Value);
+        Assert.Equal("1", groupImprovement.Element("val")!.Value);
+        Assert.Equal("True", groupImprovement.Element("addtorating")!.Value);
+        Assert.Equal("Magical Active,Resonance Active,Social Active,Technical Active,Vechicle Active",
+            groupImprovement.Element("exclude")!.Value);
     }
 
     [Theory]

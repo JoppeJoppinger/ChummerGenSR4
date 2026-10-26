@@ -195,6 +195,8 @@ public sealed partial class CyberwareManager
             return blocker;
         if (RequiresText(entry))
             return $"'{name}' erfordert eine Texteingabe; das wird für Suiten nicht unterstützt.";
+        if (RequiresAttributeSelection(entry) || RequiresSkillSelection(entry) || RequiresSkillGroupSelection(entry))
+            return $"'{name}' erfordert eine Attribut- oder Fertigkeitsauswahl; das wird für Suiten nicht unterstützt.";
         if (SuiteUnsupportedCatalogElements.FirstOrDefault(t => entry.Node.Element(t) is not null) is { } tag)
             return $"'{name}' enthält '{tag}' (Standard-Plugins/Auswahltext); das wird für Suiten nicht unterstützt.";
         if (entry.Cost.StartsWith("Variable", StringComparison.Ordinal))

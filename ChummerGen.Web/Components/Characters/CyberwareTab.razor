@@ -217,6 +217,30 @@
                             </select>
                         }
 
+                        @if (SelectedEntry is { } skillEntry && Manager.RequiresSkillSelection(skillEntry))
+                        {
+                            <label>Fertigkeit</label>
+                            <select class="form-select form-select-sm" value="@addSkill" @onchange="e => { addSkill = e.Value?.ToString() ?? string.Empty; }">
+                                <option value="">–</option>
+                                @foreach (var skillName in Manager.GetSelectableSkills(skillEntry))
+                                {
+                                    <option value="@skillName">@skillName</option>
+                                }
+                            </select>
+                        }
+
+                        @if (SelectedEntry is { } skillGroupEntry && Manager.RequiresSkillGroupSelection(skillGroupEntry))
+                        {
+                            <label>Fertigkeitsgruppe</label>
+                            <select class="form-select form-select-sm" value="@addSkillGroup" @onchange="e => { addSkillGroup = e.Value?.ToString() ?? string.Empty; }">
+                                <option value="">–</option>
+                                @foreach (var groupName in Manager.GetSelectableSkillGroups(skillGroupEntry))
+                                {
+                                    <option value="@groupName">@groupName</option>
+                                }
+                            </select>
+                        }
+
                         @if (SelectedEntry is { } sidedEntry && Manager.RequiresSide(sidedEntry))
                         {
                             <label>Seite</label>
@@ -232,7 +256,7 @@
                         <p class="text-warning small mt-2">@blocker</p>
                     }
                     <button type="button" class="btn btn-sm btn-primary mt-2" @onclick="AddSelected"
-                            disabled="@(SelectedEntry is null || Manager.GetAddBlocker(SelectedEntry) is not null || (Manager.RequiresSide(SelectedEntry) || Manager.RequiresText(SelectedEntry)) && string.IsNullOrWhiteSpace(addSide) || Manager.RequiresAttributeSelection(SelectedEntry) && string.IsNullOrWhiteSpace(addAttribute))">Hinzufügen</button>
+                            disabled="@(SelectedEntry is null || Manager.GetAddBlocker(SelectedEntry) is not null || (Manager.RequiresSide(SelectedEntry) || Manager.RequiresText(SelectedEntry)) && string.IsNullOrWhiteSpace(addSide) || Manager.RequiresAttributeSelection(SelectedEntry) && string.IsNullOrWhiteSpace(addAttribute) || Manager.RequiresSkillSelection(SelectedEntry) && string.IsNullOrWhiteSpace(addSkill) || Manager.RequiresSkillGroupSelection(SelectedEntry) && string.IsNullOrWhiteSpace(addSkillGroup))">Hinzufügen</button>
                 }
             </div>
         </div>
@@ -272,6 +296,8 @@
     private int addRating;
     private string addSide = string.Empty;
     private string addAttribute = string.Empty;
+    private string addSkill = string.Empty;
+    private string addSkillGroup = string.Empty;
 
     private CyberwareManager Manager => manager ??= new CyberwareManager(Session, catalog);
     private CyberwareEssenceSummary Essence => Manager.EssenceSummary();
@@ -386,6 +412,8 @@
         addName = string.Empty;
         addGrade = AddGrades.Get("Standard").Name;
         addAttribute = string.Empty;
+        addSkill = string.Empty;
+        addSkillGroup = string.Empty;
     }
 
     private void OnAddNameChanged(ChangeEventArgs e)
@@ -394,19 +422,24 @@
         addRating = SelectedEntry is { } entry && HasRating(entry) ? MinRatingOf(entry) : 0;
         addSide = string.Empty;
         addAttribute = string.Empty;
+        addSkill = string.Empty;
+        addSkillGroup = string.Empty;
     }
 
     private void AddSelected()
     {
         if (SelectedEntry is null)
             return;
-        var result = Manager.Add(EffectiveSource, addName, addGrade, addRating, asPlugin ? selected?.Guid : null, null, addSide, addAttribute);
+        var result = Manager.Add(EffectiveSource, addName, addGrade, addRating, asPlugin ? selected?.Guid : null,
+            null, addSide, addAttribute, addSkill, addSkillGroup);
         Report(result, $"'{addName}' hinzugefügt.");
         if (result.Success)
         {
             addName = string.Empty;
             addSide = string.Empty;
             addAttribute = string.Empty;
+            addSkill = string.Empty;
+            addSkillGroup = string.Empty;
         }
     }
 

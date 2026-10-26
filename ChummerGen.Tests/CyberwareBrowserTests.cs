@@ -85,7 +85,7 @@ public sealed class CyberwareBrowserTests : PageTest
 
         await Page.Locator(".cyber-add-pane select").Nth(0).SelectOptionAsync("Bioware");
         var blockerPicker = Page.Locator(".cyber-add-pane select").Nth(2);
-        await blockerPicker.SelectOptionAsync("Reflex Recorder (Skill)");
+        await blockerPicker.SelectOptionAsync("Braveheart");
         var blocker = Page.Locator(".cyber-add-pane .text-warning");
         await Expect(blocker).ToContainTextAsync("hat Boni");
         await Expect(blocker).ToContainTextAsync("noch nicht portiert");

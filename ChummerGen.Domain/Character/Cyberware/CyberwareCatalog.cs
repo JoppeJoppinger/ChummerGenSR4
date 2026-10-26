@@ -65,14 +65,17 @@ public sealed class CyberwareCatalog
     public const string CyberwareCatalogName = "cyberware.xml";
     public const string BiowareCatalogName = "bioware.xml";
     public const string WeaponCatalogName = "weapons.xml";
+    public const string SkillCatalogName = "skills.xml";
 
     private readonly Dictionary<CyberwareSource, XElement?> _roots;
 
     private readonly XElement? _weapons;
+    private readonly XElement? _skills;
 
-    private CyberwareCatalog(XElement? cyberware, XElement? bioware, XElement? weapons = null)
+    private CyberwareCatalog(XElement? cyberware, XElement? bioware, XElement? weapons = null, XElement? skills = null)
     {
         _weapons = weapons;
+        _skills = skills;
         _roots = new() { [CyberwareSource.Cyberware] = cyberware, [CyberwareSource.Bioware] = bioware };
         CyberwareGrades = ReadGrades(cyberware);
         BiowareGrades = ReadGrades(bioware);
@@ -83,8 +86,12 @@ public sealed class CyberwareCatalog
     public CyberwareGradeTable CyberwareGrades { get; }
     public CyberwareGradeTable BiowareGrades { get; }
 
-    public static CyberwareCatalog FromXml(string? cyberwareXml, string? biowareXml, string? weaponsXml = null) =>
-        new(ParseRoot(cyberwareXml), ParseRoot(biowareXml), ParseRoot(weaponsXml));
+    public static CyberwareCatalog FromXml(
+        string? cyberwareXml,
+        string? biowareXml,
+        string? weaponsXml = null,
+        string? skillsXml = null) =>
+        new(ParseRoot(cyberwareXml), ParseRoot(biowareXml), ParseRoot(weaponsXml), ParseRoot(skillsXml));
 
     public static async Task<CyberwareCatalog> LoadAsync(
         IRuleCatalog ruleCatalog,
@@ -95,7 +102,8 @@ public sealed class CyberwareCatalog
         var cyberware = await TryGetAsync(ruleCatalog, CyberwareCatalogName, culture, cancellationToken).ConfigureAwait(false);
         var bioware = await TryGetAsync(ruleCatalog, BiowareCatalogName, culture, cancellationToken).ConfigureAwait(false);
         var weapons = await TryGetAsync(ruleCatalog, WeaponCatalogName, culture, cancellationToken).ConfigureAwait(false);
-        return FromXml(cyberware, bioware, weapons);
+        var skills = await TryGetAsync(ruleCatalog, SkillCatalogName, culture, cancellationToken).ConfigureAwait(false);
+        return FromXml(cyberware, bioware, weapons, skills);
     }
 
     public CyberwareGradeTable GradesFor(CyberwareSource source) =>
@@ -127,6 +135,11 @@ public sealed class CyberwareCatalog
 
     public XElement? FindWeaponMod(string name) =>
         _weapons?.Element("mods")?.Elements("mod").FirstOrDefault(m => m.Element("name")?.Value == name);
+
+    public IReadOnlyList<XElement> SkillNodes => _skills?.Element("skills")?.Elements("skill").ToList() ?? [];
+
+    public IReadOnlyList<string> SkillGroupNames =>
+        _skills?.Element("skillgroups")?.Elements("name").Select(n => n.Value.Trim()).Where(n => n.Length > 0).ToList() ?? [];
 
     public CyberwareCatalogEntry? Find(CyberwareSource source, string name) =>
         Entries(source).FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.Ordinal));
