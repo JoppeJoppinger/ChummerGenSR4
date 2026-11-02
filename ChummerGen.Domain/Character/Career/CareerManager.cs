@@ -434,6 +434,51 @@ public static class CareerManager
         return entry;
     }
 
+    public static string? GetQualityAddBlocker(CharacterSession session, Qualities.QualityCatalog catalog, string name)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(catalog);
+        if (!IsCareerMode(session))
+            return "Hinzufügen mit Karma ist nur im Karrieremodus möglich.";
+        var entry = catalog.Find(name);
+        if (entry is null)
+            return "Qualität nicht im Katalog.";
+        var blocker = catalog.GetAddBlocker(session, entry);
+        if (blocker is not null)
+            return blocker;
+        return !entry.IsNegative && entry.Bp * QualityKarmaMultiplier(session) > GetKarma(session) ? "Nicht genügend Karma." : null;
+    }
+
+    // Legacy: positive Qualität kostet BP * Karma-Faktor, negative wird ohne Karma gebucht (Betrag 0).
+    public static ExpenseLogEntry AddQuality(CharacterSession session, Qualities.QualityCatalog catalog, string name, DateTime? date = null)
+    {
+        var blocker = GetQualityAddBlocker(session, catalog, name);
+        if (blocker is not null)
+            throw new InvalidOperationException(blocker);
+
+        var entry = catalog.Find(name)!;
+        var cost = entry.IsNegative ? 0 : entry.Bp * QualityKarmaMultiplier(session);
+        var element = catalog.CreateElement(entry);
+        var root = session.Xml.Root!;
+        var qualities = root.Element("qualities");
+        if (qualities is null)
+        {
+            qualities = new XElement("qualities");
+            root.Add(qualities);
+        }
+
+        var log = new ExpenseLogEntry(Guid.NewGuid(), date ?? DateTime.Now, -cost,
+            $"{(entry.IsNegative ? "Negative" : "Positive")} Qualität hinzugefügt {entry.Name}", ExpenseType.Karma, false,
+            new ExpenseUndo(KarmaExpenseType.AddQuality, NuyenExpenseType.AddCyberware, element.Element("guid")!.Value));
+        qualities.Add(element);
+        session.Model.Karma = GetKarma(session) - cost;
+        AddRawExpense(session, log);
+        return log;
+    }
+
+    private static bool IsQualityAdd(ExpenseLogEntry entry) =>
+        entry.Type == ExpenseType.Karma && entry.Undo is { KarmaType: KarmaExpenseType.AddQuality, ObjectId.Length: > 0 };
+
     public static bool UndoExpense(CharacterSession session, Guid expenseGuid)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -448,7 +493,10 @@ public static class CareerManager
             return false;
 
         var entry = ParseExpenseElement(target);
-        if (entry is null || !(IsManualEntry(entry) || IsAttributeImprovement(entry) || IsSkillImprovement(entry)))
+        if (entry is null || !(IsManualEntry(entry) || IsAttributeImprovement(entry) || IsSkillImprovement(entry) || IsQualityAdd(entry)))
+            return false;
+
+        if (IsQualityAdd(entry) && !new Qualities.QualitiesManager(session).DeleteQuality(entry.Undo!.ObjectId))
             return false;
 
         if (IsSkillImprovement(entry) && !TryRevertSkillImprovement(session, entry.Undo!))

@@ -16,6 +16,20 @@
             </span>
         </div>
 
+        @if (CareerManager.IsCareerMode(Session) && addable.Count > 0)
+        {
+            <div class="d-flex gap-1 mb-2">
+                <select id="quality-add-select" class="form-select form-select-sm" @bind="addName">
+                    <option value="">—</option>
+                    @foreach (var e in addable)
+                    {
+                        <option value="@e.Name">@e.Name (@e.Bp)</option>
+                    }
+                </select>
+                <button type="button" id="quality-add" class="btn btn-sm btn-outline-primary" disabled="@(addName.Length == 0)" @onclick="AddQuality">+</button>
+            </div>
+        }
+
         @if (deleteError is not null)
         {
             <div class="alert alert-danger py-1" role="alert">@deleteError</div>
@@ -168,6 +182,7 @@
 </div>
 
 @code {
+    [Inject] private IRuleCatalog RuleCatalog { get; set; } = default!;
     [Inject] private IChummerLocalizationAccessor Localization { get; set; } = default!;
     [Parameter, EditorRequired] public CharacterSession Session { get; set; } = default!;
 
@@ -192,6 +207,9 @@
     private QualitiesSummary summary = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
     private string? selectedGuid;
     private string? deleteError;
+    private QualityCatalog qualityCatalog = QualityCatalog.Empty;
+    private IReadOnlyList<QualityCatalogEntry> addable = [];
+    private string addName = string.Empty;
     private IReadOnlyList<ImprovementModel> linkedImprovements = [];
 
     private QualityModel? SelectedQuality =>
@@ -207,6 +225,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        qualityCatalog = await QualityCatalog.LoadAsync(RuleCatalog);
+        manager = new QualitiesManager(Session);
+        Reload();
         DeleteLabel = await Localization.GetRequiredStringAsync("String_Delete");
         PositiveQualitiesLabel = await Localization.GetRequiredStringAsync("Label_SummaryPositiveQualities");
         NegativeQualitiesLabel = await Localization.GetRequiredStringAsync("Label_SummaryNegativeQualities");
@@ -234,11 +255,32 @@
         positiveQualities = manager.GetPositiveQualities();
         negativeQualities = manager.GetNegativeQualities();
         summary = manager.CalculateSummary();
+        addable = CareerManager.IsCareerMode(Session)
+            ? qualityCatalog.Entries.Where(e => CareerManager.GetQualityAddBlocker(Session, qualityCatalog, e.Name) is null)
+                .OrderBy(e => e.Name, StringComparer.Ordinal).ToList()
+            : [];
+        if (!addable.Any(e => e.Name == addName))
+            addName = string.Empty;
 
         if (selectedGuid is not null && SelectedQuality is null)
             selectedGuid = null;
 
         UpdateLinkedImprovements();
+    }
+
+    private void AddQuality()
+    {
+        deleteError = null;
+        try
+        {
+            CareerManager.AddQuality(Session, qualityCatalog, addName);
+            addName = string.Empty;
+        }
+        catch (InvalidOperationException ex)
+        {
+            deleteError = ex.Message;
+        }
+        Reload();
     }
 
     private void SelectQuality(string guid)

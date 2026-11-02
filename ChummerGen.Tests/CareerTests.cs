@@ -351,4 +351,69 @@ public sealed class CareerTests
         Assert.Throws<InvalidOperationException>(() => CareerManager.RemoveQuality(session, "g-neg"));
         Assert.Throws<InvalidOperationException>(() => CareerManager.RemoveQuality(session, "g-meta"));
         Assert.Equal(2, new ChummerGen.Domain.Character.Qualities.QualitiesManager(session).GetAllQualities().Count);
+    }
+    private const string QualityCatalogXml = """
+        <chummer><qualities>
+          <quality><name>Lucky</name><bp>12</bp><category>Positive</category><bonus /><source>SR4</source><page>1</page></quality>
+          <quality><name>Bad Luck</name><bp>-10</bp><category>Negative</category><bonus /><source>SR4</source><page>2</page></quality>
+          <quality><name>Elf Only</name><bp>5</bp><category>Positive</category><bonus /><required><oneof><metatype>Elf</metatype></oneof></required><source>SR4</source><page>3</page></quality>
+          <quality><name>Not Lucky</name><bp>5</bp><category>Positive</category><bonus /><forbidden><oneof><quality>Lucky</quality></oneof></forbidden><source>SR4</source><page>4</page></quality>
+          <quality><name>Bonus</name><bp>5</bp><category>Positive</category><bonus><MAG>1</MAG></bonus><source>SR4</source><page>5</page></quality>
+        </qualities></chummer>
+        """;
+
+    [Fact]
+    public void AddQuality_PositiveCostsKarma_NegativeIsFree_UndoRemoves()
+    {
+        var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>30</karma><nuyen>0</nuyen><metatype>Human</metatype><expenses /></character>"));
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(QualityCatalogXml);
+
+        var pos = CareerManager.AddQuality(session, catalog, "Lucky");
+        Assert.Equal(-24, pos.Amount);
+        Assert.Equal(6, CareerManager.GetKarma(session));
+        var neg = CareerManager.AddQuality(session, catalog, "Bad Luck");
+        Assert.Equal(0, neg.Amount);
+        var manager = new ChummerGen.Domain.Character.Qualities.QualitiesManager(session);
+        Assert.Equal(2, manager.GetAllQualities().Count);
+
+        Assert.True(CareerManager.UndoExpense(session, pos.Guid));
+        Assert.Equal(30, CareerManager.GetKarma(session));
+        Assert.Equal("Bad Luck", Assert.Single(manager.GetAllQualities()).Name);
+    }
+
+    [Fact]
+    public void AddQuality_BlocksDuplicatesRequirementsForbiddenBonusAndKarma()
+    {
+        var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>20</karma><nuyen>0</nuyen><metatype>Human</metatype><expenses /></character>"));
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(QualityCatalogXml);
+
+        Assert.Throws<InvalidOperationException>(() => CareerManager.AddQuality(session, catalog, "Elf Only"));
+        Assert.Throws<InvalidOperationException>(() => CareerManager.AddQuality(session, catalog, "Bonus"));
+        Assert.Throws<InvalidOperationException>(() => CareerManager.AddQuality(session, catalog, "Unbekannt"));
+        CareerManager.AddQuality(session, catalog, "Bad Luck");
+        Assert.Throws<InvalidOperationException>(() => CareerManager.AddQuality(session, catalog, "Bad Luck"));
+        Assert.Throws<InvalidOperationException>(() => CareerManager.AddQuality(session, catalog, "Lucky"));
+        Assert.Equal(20, CareerManager.GetKarma(session));
+        Assert.Equal("Bad Luck", Assert.Single(new ChummerGen.Domain.Character.Qualities.QualitiesManager(session).GetAllQualities()).Name);
+    }
+
+    [Fact]
+    public void QualityCatalog_RealCatalog_ParsesAndPlainEntriesAreAddable()
+    {
+        string? data = null;
+        for (var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory); dir is not null && data is null; dir = dir.Parent)
+        {
+            var candidate = System.IO.Path.Combine(dir.FullName, "bin", "data");
+            if (System.IO.Directory.Exists(candidate))
+                data = candidate;
+        }
+        if (data is null || !System.IO.File.Exists(System.IO.Path.Combine(data, "qualities.xml")))
+            return;
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(System.IO.File.ReadAllText(System.IO.Path.Combine(data, "qualities.xml")));
+        var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Metahuman</metatypecategory><expenses /></character>"));
+
+        Assert.True(catalog.Entries.Count() > 400);
+        var addable = catalog.Entries.Where(e => catalog.GetAddBlocker(session, e) is null).ToList();
+        Assert.NotEmpty(addable);
+        Assert.All(addable, e => Assert.False(e.Element.Element("bonus")!.HasElements));
     }}

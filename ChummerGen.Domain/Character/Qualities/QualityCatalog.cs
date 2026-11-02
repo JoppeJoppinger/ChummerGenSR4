@@ -1,0 +1,132 @@
+using System.Globalization;
+using System.Xml.Linq;
+using ChummerGen.Domain.Abstractions;
+
+namespace ChummerGen.Domain.Character.Qualities;
+
+public sealed record QualityCatalogEntry(XElement Element)
+{
+    public string Name => Element.Element("name")?.Value.Trim() ?? string.Empty;
+    public string Category => Element.Element("category")?.Value.Trim() ?? string.Empty;
+    public int Bp => int.TryParse(Element.Element("bp")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+    public bool IsNegative => string.Equals(Category, "Negative", StringComparison.OrdinalIgnoreCase);
+}
+
+public sealed class QualityCatalog
+{
+    public const string CatalogName = "qualities.xml";
+
+    private readonly Dictionary<string, QualityCatalogEntry> _entries;
+
+    public static QualityCatalog Empty { get; } = new(null);
+
+    private QualityCatalog(string? xml)
+    {
+        _entries = new Dictionary<string, QualityCatalogEntry>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(xml))
+            return;
+        var qualities = XDocument.Parse(xml).Root?.Element("qualities")?.Elements("quality") ?? [];
+        foreach (var e in qualities)
+        {
+            var entry = new QualityCatalogEntry(e);
+            if (entry.Name.Length > 0)
+                _entries.TryAdd(entry.Name, entry);
+        }
+    }
+
+    public static QualityCatalog FromXml(string? xml) => new(xml);
+
+    public static async Task<QualityCatalog> LoadAsync(IRuleCatalog ruleCatalog, string culture = "en-US", CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ruleCatalog);
+        try
+        {
+            var doc = await ruleCatalog.GetAsync(CatalogName, culture, cancellationToken).ConfigureAwait(false);
+            return new QualityCatalog(doc?.Content);
+        }
+        catch (FileNotFoundException)
+        {
+            return Empty;
+        }
+    }
+
+    public IEnumerable<QualityCatalogEntry> Entries => _entries.Values;
+
+    public QualityCatalogEntry? Find(string name) =>
+        _entries.TryGetValue(name ?? string.Empty, out var e) ? e : null;
+
+    private static readonly HashSet<string> SupportedRequired = ["quality", "metatype", "metatypecategory", "metavariant"];
+    private static readonly HashSet<string> SupportedForbidden = ["quality", "metatype", "metatypecategory", "metavariant", "metagenetic"];
+
+    // Liefert null, wenn die Qualität hinzugefügt werden darf; nicht portierte Formen bleiben fail-closed.
+    public string? GetAddBlocker(CharacterSession session, QualityCatalogEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var el = entry.Element;
+        if (el.Element("bonus") is { HasElements: true })
+            return "Qualität mit Boni wird noch nicht unterstützt.";
+        if (el.Element("powers") is not null || el.Element("addweapon") is not null || el.Element("addqualities") is not null)
+            return "Qualität mit Zusatzelementen wird noch nicht unterstützt.";
+
+        var root = session.Xml.Root;
+        var owned = root?.Element("qualities")?.Elements("quality")
+            .Select(q => q.Element("name")?.Value.Trim() ?? string.Empty).ToList() ?? [];
+        var multiple = string.Equals(el.Element("limit")?.Value.Trim(), "no", StringComparison.OrdinalIgnoreCase);
+        if (!multiple && owned.Contains(entry.Name, StringComparer.Ordinal))
+            return "Die Qualität ist bereits vorhanden.";
+
+        string Meta(string tag) => root?.Element(tag)?.Value.Trim() ?? string.Empty;
+        bool Has(XElement c) => c.Name.LocalName switch
+        {
+            "quality" => owned.Contains(c.Value.Trim(), StringComparer.Ordinal),
+            "metatype" => c.Value.Trim() == Meta("metatype"),
+            "metatypecategory" => c.Value.Trim() == Meta("metatypecategory"),
+            "metavariant" => c.Value.Trim() == Meta("metavariant"),
+            "metagenetic" => owned.Any(n => Find(n)?.Element.Element("metagenetic")?.Value.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase) == true),
+            _ => false
+        };
+
+        if (el.Element("forbidden") is { } forbidden)
+        {
+            if (forbidden.Elements().Any(g => g.Name.LocalName != "oneof" || g.Elements().Any(c => !SupportedForbidden.Contains(c.Name.LocalName))))
+                return "Verbotsbedingung wird noch nicht unterstützt.";
+            if (forbidden.Elements("oneof").Any(g => g.Elements().Any(Has)))
+                return "Die Qualität ist wegen einer Verbotsbedingung nicht erlaubt.";
+        }
+
+        if (el.Element("required") is { } required)
+        {
+            if (required.Elements().Any(g => g.Name.LocalName is not ("oneof" or "allof") || g.Elements().Any(c => !SupportedRequired.Contains(c.Name.LocalName))))
+                return "Voraussetzung wird noch nicht unterstützt.";
+            if (required.Elements("oneof").Any(g => !g.Elements().Any(Has))
+                || required.Elements("allof").Any(g => !g.Elements().All(Has)))
+                return "Voraussetzungen der Qualität sind nicht erfüllt.";
+        }
+
+        return null;
+    }
+
+    public XElement CreateElement(QualityCatalogEntry entry, string source = "Selected")
+    {
+        var el = entry.Element;
+        var contribute = !string.Equals(el.Element("contributetolimit")?.Value.Trim(), "no", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(el.Element("contributetolimit")?.Value.Trim(), "False", StringComparison.OrdinalIgnoreCase);
+        var result = new XElement("quality",
+            new XElement("guid", Guid.NewGuid().ToString()),
+            new XElement("name", entry.Name),
+            new XElement("extra", string.Empty),
+            new XElement("bp", entry.Bp.ToString(CultureInfo.InvariantCulture)),
+            new XElement("contributetolimit", contribute ? "True" : "False"),
+            new XElement("print", "True"),
+            new XElement("qualitytype", entry.IsNegative ? "Negative" : "Positive"),
+            new XElement("qualitysource", source));
+        if (el.Element("mutant") is { } mutant && mutant.Value.Length > 0)
+            result.Add(new XElement("mutant", mutant.Value));
+        result.Add(
+            new XElement("source", el.Element("source")?.Value ?? string.Empty),
+            new XElement("page", el.Element("page")?.Value ?? string.Empty),
+            new XElement("bonus"),
+            new XElement("notes", string.Empty));
+        return result;
+    }
+}
