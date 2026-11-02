@@ -387,6 +387,53 @@ public static class CareerManager
         return true;
     }
 
+    public static int GetQualityRemoveCost(CharacterSession session, string qualityGuid)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var q = ResolveQualityRemoval(session, qualityGuid);
+        return q.Category == Qualities.QualityCategory.Negative ? Math.Abs(q.Bp) * QualityKarmaMultiplier(session) : 0;
+    }
+
+    private static int QualityKarmaMultiplier(CharacterSession session) =>
+        session.Settings.QualityKarmaCost > 0 ? session.Settings.QualityKarmaCost : 2;
+
+    private static Qualities.QualityModel ResolveQualityRemoval(CharacterSession session, string qualityGuid)
+    {
+        if (!IsCareerMode(session))
+            throw new InvalidOperationException("Entfernen mit Karma ist nur im Karrieremodus möglich.");
+        var q = new Qualities.QualitiesManager(session).GetAllQualities()
+            .FirstOrDefault(x => string.Equals(x.Guid, qualityGuid, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Qualität fehlt im Charakter.");
+        if (q.IsFromMetatype)
+            throw new InvalidOperationException("Qualitäten des Metatyps können (noch) nicht entfernt werden.");
+        return q;
+    }
+
+    // Legacy: positive Qualitäten kostenlos entfernen, negative per Karma freikaufen (nicht rücknehmbar).
+    public static ExpenseLogEntry? RemoveQuality(CharacterSession session, string qualityGuid, DateTime? date = null)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var q = ResolveQualityRemoval(session, qualityGuid);
+        var cost = q.Category == Qualities.QualityCategory.Negative ? Math.Abs(q.Bp) * QualityKarmaMultiplier(session) : 0;
+        if (cost > GetKarma(session))
+            throw new InvalidOperationException("Nicht genügend Karma.");
+
+        ExpenseLogEntry? entry = null;
+        if (q.Category == Qualities.QualityCategory.Negative)
+            entry = new ExpenseLogEntry(Guid.NewGuid(), date ?? DateTime.Now, -cost,
+                $"Negative Qualität entfernt {q.DisplayName}", ExpenseType.Karma, false,
+                new ExpenseUndo(KarmaExpenseType.RemoveQuality, NuyenExpenseType.AddCyberware, q.Name, 0, q.Extra ?? string.Empty));
+
+        if (!new Qualities.QualitiesManager(session).DeleteQuality(q.Guid))
+            throw new InvalidOperationException("Qualität konnte nicht entfernt werden.");
+        if (entry is not null)
+        {
+            session.Model.Karma = GetKarma(session) - cost;
+            AddRawExpense(session, entry);
+        }
+        return entry;
+    }
+
     public static bool UndoExpense(CharacterSession session, Guid expenseGuid)
     {
         ArgumentNullException.ThrowIfNull(session);

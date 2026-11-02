@@ -314,4 +314,41 @@ public sealed class CareerTests
         public Task<RuleCatalogDocument?> GetAsync(string catalogName, string culture, CancellationToken cancellationToken) =>
             Task.FromResult<RuleCatalogDocument?>(null);
     }
-}
+
+    private static CharacterSession QualitySession(int karma) => new(ChumSerializer.Parse($$"""
+        <character><created>True</created><karma>{{karma}}</karma><nuyen>0</nuyen><expenses />
+          <qualities>
+            <quality><guid>g-neg</guid><name>Bad Luck</name><bp>-10</bp><qualitytype>Negative</qualitytype><qualitysource>Selected</qualitysource></quality>
+            <quality><guid>g-pos</guid><name>Lucky</name><bp>12</bp><qualitytype>Positive</qualitytype><qualitysource>Selected</qualitysource></quality>
+            <quality><guid>g-meta</guid><name>Low-Light</name><bp>10</bp><qualitytype>Positive</qualitytype><qualitysource>Metatype</qualitysource></quality>
+          </qualities>
+        </character>
+        """));
+
+    [Fact]
+    public void RemoveQuality_NegativeCostsKarmaAndBooksExpense()
+    {
+        var session = QualitySession(30);
+
+        var entry = CareerManager.RemoveQuality(session, "g-neg");
+
+        Assert.NotNull(entry);
+        Assert.Equal(-20, entry!.Amount);
+        Assert.Equal(10, CareerManager.GetKarma(session));
+        Assert.Equal(KarmaExpenseType.RemoveQuality, entry.Undo!.KarmaType);
+        Assert.DoesNotContain(new ChummerGen.Domain.Character.Qualities.QualitiesManager(session).GetAllQualities(), q => q.Guid == "g-neg");
+        Assert.False(CareerManager.UndoExpense(session, entry.Guid));
+    }
+
+    [Fact]
+    public void RemoveQuality_PositiveIsFree_FailsWithoutKarmaOrForMetatype()
+    {
+        var session = QualitySession(5);
+
+        Assert.Null(CareerManager.RemoveQuality(session, "g-pos"));
+        Assert.Equal(5, CareerManager.GetKarma(session));
+        Assert.Empty(CareerManager.GetExpenses(session));
+        Assert.Throws<InvalidOperationException>(() => CareerManager.RemoveQuality(session, "g-neg"));
+        Assert.Throws<InvalidOperationException>(() => CareerManager.RemoveQuality(session, "g-meta"));
+        Assert.Equal(2, new ChummerGen.Domain.Character.Qualities.QualitiesManager(session).GetAllQualities().Count);
+    }}

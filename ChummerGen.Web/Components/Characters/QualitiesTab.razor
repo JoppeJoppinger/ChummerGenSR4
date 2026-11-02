@@ -1,4 +1,5 @@
 @using ChummerGen.Domain.Character
+@using ChummerGen.Domain.Character.Career
 @using ChummerGen.Domain.Character.Qualities
 
 <div class="qualities-tab-container" style="display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 1rem;">
@@ -14,6 +15,11 @@
                 @(SelectedQuality?.IsFromMetatype == true ? "(Metatyp-Gabe)" : "")
             </span>
         </div>
+
+        @if (deleteError is not null)
+        {
+            <div class="alert alert-danger py-1" role="alert">@deleteError</div>
+        }
 
         <div class="qualities-group" style="margin-bottom: 1rem;">
             <div style="font-weight: bold; background: #e0e0e0; padding: 0.2rem 0.4rem; font-size: 0.9rem; border-bottom: 1px solid #ccc;">
@@ -185,6 +191,7 @@
     private IReadOnlyList<QualityModel> negativeQualities = [];
     private QualitiesSummary summary = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
     private string? selectedGuid;
+    private string? deleteError;
     private IReadOnlyList<ImprovementModel> linkedImprovements = [];
 
     private QualityModel? SelectedQuality =>
@@ -274,10 +281,23 @@
             return;
 
         var guidToDelete = SelectedQuality.Guid;
-        if (manager.DeleteQuality(guidToDelete))
+        deleteError = null;
+        try
         {
-            selectedGuid = null;
-            Reload();
+            if (CareerManager.IsCareerMode(Session))
+            {
+                CareerManager.RemoveQuality(Session, guidToDelete);
+                selectedGuid = null;
+            }
+            else if (manager.DeleteQuality(guidToDelete))
+            {
+                selectedGuid = null;
+            }
         }
+        catch (InvalidOperationException ex)
+        {
+            deleteError = ex.Message;
+        }
+        Reload();
     }
 }
