@@ -360,6 +360,7 @@ public sealed class CareerTests
           <quality><name>Not Lucky</name><bp>5</bp><category>Positive</category><bonus /><forbidden><oneof><quality>Lucky</quality></oneof></forbidden><source>SR4</source><page>4</page></quality>
           <quality><name>Phobia</name><bp>-5</bp><category>Negative</category><bonus><selecttext /></bonus><source>SR4</source><page>6</page></quality>
           <quality><name>Skilled</name><bp>5</bp><category>Positive</category><bonus><specificskill><name>Pistols</name><bonus>1</bonus></specificskill></bonus><source>SR4</source><page>7</page></quality>
+          <quality><name>Uncouth</name><bp>-14</bp><category>Negative</category><bonus><notoriety>1</notoriety><uncouth /></bonus><source>SR4</source><page>8</page></quality>
           <quality><name>Bonus</name><bp>5</bp><category>Positive</category><bonus><MAG>1</MAG></bonus><source>SR4</source><page>5</page></quality>
         </qualities></chummer>
         """;
@@ -449,5 +450,23 @@ public sealed class CareerTests
         Assert.True(CareerManager.UndoExpense(session, phobia.Guid));
         Assert.True(CareerManager.UndoExpense(session, skilled.Guid));
         Assert.Empty(manager.GetAllQualities());
+        Assert.Empty(manager.GetAllImprovements());
+    }
+    [Fact]
+    public void AddQuality_ValueAndFlagTags_SetImprovementsAndFlagsAndUndoResetsFlag()
+    {
+        var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>0</karma><nuyen>0</nuyen><metatype>Human</metatype><uncouth>False</uncouth><expenses /></character>"));
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(QualityCatalogXml);
+        var manager = new ChummerGen.Domain.Character.Qualities.QualitiesManager(session);
+
+        var log = CareerManager.AddQuality(session, catalog, "Uncouth");
+
+        Assert.Equal("True", session.Xml.Root!.Element("uncouth")!.Value);
+        var imps = manager.GetQualityImprovements();
+        Assert.Contains(imps, i => i.ImprovementType == "Notoriety" && i.Val == 1 && i.UniqueName == "");
+        Assert.Contains(imps, i => i.ImprovementType == "Uncouth");
+
+        Assert.True(CareerManager.UndoExpense(session, log.Guid));
+        Assert.Equal("False", session.Xml.Root.Element("uncouth")!.Value);
         Assert.Empty(manager.GetAllImprovements());
     }}

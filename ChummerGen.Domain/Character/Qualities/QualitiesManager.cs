@@ -178,6 +178,7 @@ public sealed class QualitiesManager
         }
 
         qualElem.Remove();
+        Cyberware.CyberwareManager.RefreshExternalFlags(_session);
         return true;
     }
 }
