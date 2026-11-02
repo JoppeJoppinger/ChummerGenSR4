@@ -129,9 +129,11 @@ public sealed class CyberwareCatalog
     }
 
     // Legacy: /chummer/weapons/weapon[name = X and starts-with(category, "Cyberware")]
-    public XElement? FindCyberwareWeapon(string name) =>
+    public XElement? FindCyberwareWeapon(string name) => FindWeapon(name, "Cyberware");
+
+    public XElement? FindWeapon(string name, string categoryPrefix) =>
         _weapons?.Element("weapons")?.Elements("weapon")
-            .FirstOrDefault(w => w.Element("name")?.Value == name && (w.Element("category")?.Value.StartsWith("Cyberware", StringComparison.Ordinal) ?? false));
+            .FirstOrDefault(w => w.Element("name")?.Value == name && (w.Element("category")?.Value.StartsWith(categoryPrefix, StringComparison.Ordinal) ?? false));
 
     public XElement? FindWeaponMod(string name) =>
         _weapons?.Element("mods")?.Elements("mod").FirstOrDefault(m => m.Element("name")?.Value == name);

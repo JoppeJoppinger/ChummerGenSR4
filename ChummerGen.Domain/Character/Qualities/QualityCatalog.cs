@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using ChummerGen.Domain.Abstractions;
+using ChummerGen.Domain.Character.Cyberware;
 
 namespace ChummerGen.Domain.Character.Qualities;
 
@@ -20,8 +21,11 @@ public sealed class QualityCatalog
 
     public static QualityCatalog Empty { get; } = new(null);
 
-    private QualityCatalog(string? xml)
+    private readonly CyberwareCatalog _weapons;
+
+    private QualityCatalog(string? xml, string? weaponsXml = null)
     {
+        _weapons = CyberwareCatalog.FromXml(null, null, weaponsXml);
         _entries = new Dictionary<string, QualityCatalogEntry>(StringComparer.Ordinal);
         if (string.IsNullOrWhiteSpace(xml))
             return;
@@ -34,7 +38,9 @@ public sealed class QualityCatalog
         }
     }
 
-    public static QualityCatalog FromXml(string? xml) => new(xml);
+    public static QualityCatalog FromXml(string? xml, string? weaponsXml = null) => new(xml, weaponsXml);
+
+    public CyberwareCatalog WeaponCatalog => _weapons;
 
     public static async Task<QualityCatalog> LoadAsync(IRuleCatalog ruleCatalog, string culture = "en-US", CancellationToken cancellationToken = default)
     {
@@ -42,7 +48,16 @@ public sealed class QualityCatalog
         try
         {
             var doc = await ruleCatalog.GetAsync(CatalogName, culture, cancellationToken).ConfigureAwait(false);
-            return new QualityCatalog(doc?.Content);
+            string? weapons = null;
+            try
+            {
+                weapons = (await ruleCatalog.GetAsync(CyberwareCatalog.WeaponCatalogName, culture, cancellationToken).ConfigureAwait(false))?.Content;
+            }
+            catch (FileNotFoundException)
+            {
+            }
+
+            return new QualityCatalog(doc?.Content, weapons);
         }
         catch (FileNotFoundException)
         {
@@ -63,10 +78,8 @@ public sealed class QualityCatalog
     {
         ArgumentNullException.ThrowIfNull(session);
         var el = entry.Element;
-        if (el.Element("bonus") is { HasElements: true } bonus && !Cyberware.CyberwareManager.TryParseExternalBonus(bonus, out _))
-            return "Qualität mit diesem Bonus wird noch nicht unterstützt.";
-        if (el.Element("powers") is not null || el.Element("addweapon") is not null || el.Element("addqualities") is not null)
-            return "Qualität mit Zusatzelementen wird noch nicht unterstützt.";
+        if (GetSupportBlocker(entry, 0) is { } unsupported)
+            return unsupported;
 
         var root = session.Xml.Root;
         var owned = root?.Element("qualities")?.Elements("quality")
@@ -101,6 +114,34 @@ public sealed class QualityCatalog
             if (required.Elements("oneof").Any(g => !g.Elements().Any(Has))
                 || required.Elements("allof").Any(g => !g.Elements().All(Has)))
                 return "Voraussetzungen der Qualität sind nicht erfüllt.";
+        }
+
+        return null;
+    }
+
+    // Nicht portierte Formen (Bonus, powers, addweapon, addqualities) bleiben fail-closed.
+    public string? GetSupportBlocker(QualityCatalogEntry entry, int depth)
+    {
+        var el = entry.Element;
+        if (el.Element("bonus") is { HasElements: true } bonus && !CyberwareManager.TryParseExternalBonus(bonus, out _))
+            return "Qualität mit diesem Bonus wird noch nicht unterstützt.";
+        if (el.Element("powers") is not null)
+            return "Qualität mit Zusatzelementen wird noch nicht unterstützt.";
+        if (CyberwareWeaponFactory.GetBlocker(_weapons, el, "Quality") is { } weaponBlocker)
+            return weaponBlocker;
+        if (el.Element("addqualities") is { } add)
+        {
+            if (depth > 3 || add.Elements().Any(a => a.Name.LocalName != "addquality" || a.HasAttributes || a.HasElements))
+                return "Qualität mit Zusatzqualitäten wird noch nicht unterstützt.";
+            foreach (var a in add.Elements("addquality"))
+            {
+                if (Find(a.Value.Trim()) is not { } target)
+                    return "Zusatzqualität fehlt im Katalog.";
+                if (GetSupportBlocker(target, depth + 1) is { } nested)
+                    return nested;
+                if (RequiresText(target))
+                    return "Zusatzqualität mit Texteingabe wird noch nicht unterstützt.";
+            }
         }
 
         return null;

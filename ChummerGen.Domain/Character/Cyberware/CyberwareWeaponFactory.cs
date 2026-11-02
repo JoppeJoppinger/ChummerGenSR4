@@ -10,11 +10,11 @@ internal static class CyberwareWeaponFactory
     private static readonly string[] RequiredWeaponFields = ["name", "category", "type", "reach", "damage", "ap", "mode", "ammo", "rc", "avail", "cost", "source", "page"];
     private static readonly string[] RequiredModFields = ["name", "slots", "avail", "cost", "source", "page"];
 
-    public static string? GetBlocker(CyberwareCatalog catalog, XElement cyberwareNode)
+    public static string? GetBlocker(CyberwareCatalog catalog, XElement cyberwareNode, string categoryPrefix = "Cyberware")
     {
         foreach (var add in cyberwareNode.Elements("addweapon"))
         {
-            var weapon = catalog.FindCyberwareWeapon(add.Value);
+            var weapon = catalog.FindWeapon(add.Value, categoryPrefix);
             if (weapon is null)
                 return $"Die Cyberware-Waffe '{add.Value}' ist nicht im Waffenkatalog vorhanden.";
             if (RequiredWeaponFields.FirstOrDefault(f => weapon.Element(f) is null) is { } missing)

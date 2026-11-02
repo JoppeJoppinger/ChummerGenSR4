@@ -412,7 +412,7 @@ public sealed class CareerTests
         }
         if (data is null || !System.IO.File.Exists(System.IO.Path.Combine(data, "qualities.xml")))
             return;
-        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(System.IO.File.ReadAllText(System.IO.Path.Combine(data, "qualities.xml")));
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(System.IO.File.ReadAllText(System.IO.Path.Combine(data, "qualities.xml")), System.IO.File.ReadAllText(System.IO.Path.Combine(data, "weapons.xml")));
         var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Metahuman</metatypecategory><expenses /></character>"));
 
         Assert.True(catalog.Entries.Count() > 400);
@@ -420,14 +420,68 @@ public sealed class CareerTests
         Assert.NotEmpty(addable);
         Assert.True(addable.Count > 200, $"addable {addable.Count}");
         Assert.Contains(addable, e => e.Element.Element("bonus")!.HasElements);
+        Assert.Contains(addable, e => e.Element.Element("addqualities") is not null);
         foreach (var e in addable)
         {
             var fresh = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Metahuman</metatypecategory><expenses /></character>"));
             var log = CareerManager.AddQuality(fresh, catalog, e.Name, text: "Test");
             Assert.True(CareerManager.UndoExpense(fresh, log.Guid), e.Name);
             Assert.Empty(new ChummerGen.Domain.Character.Qualities.QualitiesManager(fresh).GetAllImprovements());
+            Assert.Empty(fresh.Xml.Root!.Element("weapons")?.Elements("weapon") ?? []);
+            Assert.Empty(fresh.Xml.Root!.Element("qualities")?.Elements("quality") ?? []);
         }
     }
+    [Fact]
+    public void AddQuality_RealCatalogWeaponQualityAddsLinkedWeaponAndUndoRemovesIt()
+    {
+        string? data = null;
+        for (var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory); dir is not null && data is null; dir = dir.Parent)
+        {
+            var candidate = System.IO.Path.Combine(dir.FullName, "bin", "data");
+            if (System.IO.Directory.Exists(candidate))
+                data = candidate;
+        }
+        if (data is null || !System.IO.File.Exists(System.IO.Path.Combine(data, "qualities.xml")) || !System.IO.File.Exists(System.IO.Path.Combine(data, "weapons.xml")))
+            return;
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(System.IO.File.ReadAllText(System.IO.Path.Combine(data, "qualities.xml")), System.IO.File.ReadAllText(System.IO.Path.Combine(data, "weapons.xml")));
+        const string Xml = "<character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Mutant Critters</metatypecategory><expenses /></character>";
+        var weaponQualities = catalog.Entries.Where(e => e.Element.Element("addweapon") is not null).ToList();
+        Assert.Equal(6, weaponQualities.Count);
+        foreach (var e in weaponQualities)
+        {
+            var session = new CharacterSession(ChumSerializer.Parse(Xml));
+            var log = CareerManager.AddQuality(session, catalog, e.Name);
+            var quality = session.Xml.Root!.Element("qualities")!.Elements("quality").Single(q => q.Element("name")!.Value == e.Name);
+            var weapon = Assert.Single(session.Xml.Root!.Element("weapons")!.Elements("weapon"));
+            Assert.Equal(weapon.Element("guid")!.Value, quality.Element("weaponguid")!.Value);
+            Assert.True(CareerManager.UndoExpense(session, log.Guid), e.Name);
+            Assert.Empty(session.Xml.Root!.Element("weapons")!.Elements("weapon"));
+        }
+    }
+
+    [Fact]
+    public void AddQuality_RealCatalogAddqualitiesAddsFollowUpAndUndoRemovesBoth()
+    {
+        string? data = null;
+        for (var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory); dir is not null && data is null; dir = dir.Parent)
+        {
+            var candidate = System.IO.Path.Combine(dir.FullName, "bin", "data");
+            if (System.IO.Directory.Exists(candidate))
+                data = candidate;
+        }
+        if (data is null || !System.IO.File.Exists(System.IO.Path.Combine(data, "qualities.xml")))
+            return;
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(System.IO.File.ReadAllText(System.IO.Path.Combine(data, "qualities.xml")));
+        var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Metahuman</metatypecategory><expenses /></character>"));
+        var host = catalog.Entries.First(e => e.Element.Element("addqualities") is not null && catalog.GetAddBlocker(session, e) is null);
+        var log = CareerManager.AddQuality(session, catalog, host.Name);
+        var names = session.Xml.Root!.Element("qualities")!.Elements("quality").Select(q => q.Element("name")!.Value).ToList();
+        Assert.Contains("Distinctive Style", names);
+        Assert.Equal(2, names.Count);
+        Assert.True(CareerManager.UndoExpense(session, log.Guid));
+        Assert.Empty(session.Xml.Root!.Element("qualities")!.Elements("quality"));
+    }
+
     [Fact]
     public void AddQuality_AppliesBonusImprovementsWithTextAndUndoRemovesThem()
     {

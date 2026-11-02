@@ -458,9 +458,40 @@ public static class CareerManager
 
         var entry = catalog.Find(name)!;
         var cost = entry.IsNegative ? 0 : entry.Bp * QualityKarmaMultiplier(session);
+        var root = session.Xml.Root!;
+        var qualities = root.Element("qualities");
+        if (qualities is null)
+        {
+            qualities = new XElement("qualities");
+            root.Add(qualities);
+        }
+
+        var guids = new List<string>();
+        var element = BuildQualityElement(session, catalog, entry, text, guids, 0);
+        foreach (var child in entry.Element.Element("addqualities")?.Elements("addquality") ?? [])
+        {
+            var childEntry = catalog.Find(child.Value.Trim())!;
+            if (qualities.Elements("quality").Any(q => q.Element("name")?.Value == childEntry.Name && (q.Element("extra")?.Value ?? string.Empty).Length == 0))
+                continue;
+            qualities.Add(BuildQualityElement(session, catalog, childEntry, null, guids, 1));
+        }
+
+        var guid = string.Join(",", guids);
+        var log = new ExpenseLogEntry(Guid.NewGuid(), date ?? DateTime.Now, -cost,
+            $"{(entry.IsNegative ? "Negative" : "Positive")} Qualität hinzugefügt {entry.Name}", ExpenseType.Karma, false,
+            new ExpenseUndo(KarmaExpenseType.AddQuality, NuyenExpenseType.AddCyberware, guid));
+        qualities.Add(element);
+        session.Model.Karma = GetKarma(session) - cost;
+        AddRawExpense(session, log);
+        return log;
+    }
+
+    // Legacy addqualities: Folgequalitäten ohne Kosten, Waffen über weaponguid verknüpft.
+    private static XElement BuildQualityElement(CharacterSession session, Qualities.QualityCatalog catalog, Qualities.QualityCatalogEntry entry, string? text, List<string> guids, int depth)
+    {
         var element = catalog.CreateElement(entry);
         var guid = element.Element("guid")!.Value;
-        var root = session.Xml.Root!;
+        guids.Add(guid);
         if (entry.Element.Element("bonus") is { HasElements: true } bonus)
         {
             if (!Cyberware.CyberwareManager.TryApplyExternalBonus(session, guid, "Quality", bonus, text))
@@ -469,20 +500,24 @@ public static class CareerManager
                 element.Element("extra")!.Value = text!.Trim();
         }
 
-        var qualities = root.Element("qualities");
-        if (qualities is null)
+        var created = entry.Element.Elements("addweapon")
+            .Select(a => Cyberware.CyberwareWeaponFactory.Build(catalog.WeaponCatalog.FindWeapon(a.Value, "Quality")!, catalog.WeaponCatalog))
+            .ToList();
+        if (created.Count > 0)
         {
-            qualities = new XElement("qualities");
-            root.Add(qualities);
+            var root = session.Xml.Root!;
+            var weapons = root.Element("weapons");
+            if (weapons is null)
+            {
+                weapons = new XElement("weapons");
+                root.Add(weapons);
+            }
+
+            weapons.Add(created);
+            element.Element("bonus")!.AddAfterSelf(new XElement("weaponguid", created[^1].Element("guid")!.Value));
         }
 
-        var log = new ExpenseLogEntry(Guid.NewGuid(), date ?? DateTime.Now, -cost,
-            $"{(entry.IsNegative ? "Negative" : "Positive")} Qualität hinzugefügt {entry.Name}", ExpenseType.Karma, false,
-            new ExpenseUndo(KarmaExpenseType.AddQuality, NuyenExpenseType.AddCyberware, guid));
-        qualities.Add(element);
-        session.Model.Karma = GetKarma(session) - cost;
-        AddRawExpense(session, log);
-        return log;
+        return element;
     }
 
     private static bool IsQualityAdd(ExpenseLogEntry entry) =>
@@ -505,8 +540,13 @@ public static class CareerManager
         if (entry is null || !(IsManualEntry(entry) || IsAttributeImprovement(entry) || IsSkillImprovement(entry) || IsQualityAdd(entry)))
             return false;
 
-        if (IsQualityAdd(entry) && !new Qualities.QualitiesManager(session).DeleteQuality(entry.Undo!.ObjectId))
-            return false;
+        if (IsQualityAdd(entry))
+        {
+            var manager = new Qualities.QualitiesManager(session);
+            var ids = entry.Undo!.ObjectId.Split(',');
+            if (ids.Any(id => !manager.DeleteQuality(id)) && ids.Length == 1)
+                return false;
+        }
 
         if (IsSkillImprovement(entry) && !TryRevertSkillImprovement(session, entry.Undo!))
             return false;

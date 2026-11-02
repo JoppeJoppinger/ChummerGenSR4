@@ -177,6 +177,13 @@ public sealed class QualitiesManager
                 imp.Remove();
         }
 
+        if (qualElem.Element("weaponguid")?.Value is { Length: > 0 } weaponGuid)
+        {
+            root.Element("weapons")?.Elements("weapon")
+                .Where(w => string.Equals(w.Element("guid")?.Value, weaponGuid, StringComparison.OrdinalIgnoreCase))
+                .ToList().ForEach(w => w.Remove());
+        }
+
         qualElem.Remove();
         Cyberware.CyberwareManager.RefreshExternalFlags(_session);
         return true;
