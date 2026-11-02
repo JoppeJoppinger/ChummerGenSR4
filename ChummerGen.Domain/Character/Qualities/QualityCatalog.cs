@@ -63,8 +63,8 @@ public sealed class QualityCatalog
     {
         ArgumentNullException.ThrowIfNull(session);
         var el = entry.Element;
-        if (el.Element("bonus") is { HasElements: true })
-            return "Qualität mit Boni wird noch nicht unterstützt.";
+        if (el.Element("bonus") is { HasElements: true } bonus && !Cyberware.CyberwareManager.TryParseExternalBonus(bonus, out _))
+            return "Qualität mit diesem Bonus wird noch nicht unterstützt.";
         if (el.Element("powers") is not null || el.Element("addweapon") is not null || el.Element("addqualities") is not null)
             return "Qualität mit Zusatzelementen wird noch nicht unterstützt.";
 
@@ -125,8 +125,11 @@ public sealed class QualityCatalog
         result.Add(
             new XElement("source", el.Element("source")?.Value ?? string.Empty),
             new XElement("page", el.Element("page")?.Value ?? string.Empty),
-            new XElement("bonus"),
+            el.Element("bonus") is { } b ? new XElement("bonus", b.Nodes()) : new XElement("bonus"),
             new XElement("notes", string.Empty));
         return result;
     }
+
+    public bool RequiresText(QualityCatalogEntry entry) =>
+        entry.Element.Element("bonus") is { } b && Cyberware.CyberwareManager.TryParseExternalBonus(b, out var text) && text;
 }

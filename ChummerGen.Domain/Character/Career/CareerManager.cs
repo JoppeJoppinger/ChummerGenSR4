@@ -450,7 +450,7 @@ public static class CareerManager
     }
 
     // Legacy: positive Qualität kostet BP * Karma-Faktor, negative wird ohne Karma gebucht (Betrag 0).
-    public static ExpenseLogEntry AddQuality(CharacterSession session, Qualities.QualityCatalog catalog, string name, DateTime? date = null)
+    public static ExpenseLogEntry AddQuality(CharacterSession session, Qualities.QualityCatalog catalog, string name, DateTime? date = null, string? text = null)
     {
         var blocker = GetQualityAddBlocker(session, catalog, name);
         if (blocker is not null)
@@ -459,7 +459,16 @@ public static class CareerManager
         var entry = catalog.Find(name)!;
         var cost = entry.IsNegative ? 0 : entry.Bp * QualityKarmaMultiplier(session);
         var element = catalog.CreateElement(entry);
+        var guid = element.Element("guid")!.Value;
         var root = session.Xml.Root!;
+        if (entry.Element.Element("bonus") is { HasElements: true } bonus)
+        {
+            if (!Cyberware.CyberwareManager.TryApplyExternalBonus(session, guid, "Quality", bonus, text))
+                throw new InvalidOperationException("Der Bonus der Qualität benötigt eine gültige Eingabe.");
+            if (catalog.RequiresText(entry))
+                element.Element("extra")!.Value = text!.Trim();
+        }
+
         var qualities = root.Element("qualities");
         if (qualities is null)
         {
@@ -469,7 +478,7 @@ public static class CareerManager
 
         var log = new ExpenseLogEntry(Guid.NewGuid(), date ?? DateTime.Now, -cost,
             $"{(entry.IsNegative ? "Negative" : "Positive")} Qualität hinzugefügt {entry.Name}", ExpenseType.Karma, false,
-            new ExpenseUndo(KarmaExpenseType.AddQuality, NuyenExpenseType.AddCyberware, element.Element("guid")!.Value));
+            new ExpenseUndo(KarmaExpenseType.AddQuality, NuyenExpenseType.AddCyberware, guid));
         qualities.Add(element);
         session.Model.Karma = GetKarma(session) - cost;
         AddRawExpense(session, log);

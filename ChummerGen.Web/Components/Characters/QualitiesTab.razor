@@ -26,7 +26,11 @@
                         <option value="@e.Name">@e.Name (@e.Bp)</option>
                     }
                 </select>
-                <button type="button" id="quality-add" class="btn btn-sm btn-outline-primary" disabled="@(addName.Length == 0)" @onclick="AddQuality">+</button>
+                @if (AddNeedsText)
+                {
+                    <input id="quality-add-text" class="form-control form-control-sm" placeholder="Text" @bind="addText" @bind:event="oninput" />
+                }
+                <button type="button" id="quality-add" class="btn btn-sm btn-outline-primary" disabled="@(addName.Length == 0 || (AddNeedsText && string.IsNullOrWhiteSpace(addText)))" @onclick="AddQuality">+</button>
             </div>
         }
 
@@ -210,6 +214,8 @@
     private QualityCatalog qualityCatalog = QualityCatalog.Empty;
     private IReadOnlyList<QualityCatalogEntry> addable = [];
     private string addName = string.Empty;
+    private string addText = string.Empty;
+    private bool AddNeedsText => addable.FirstOrDefault(e => e.Name == addName) is { } sel && qualityCatalog.RequiresText(sel);
     private IReadOnlyList<ImprovementModel> linkedImprovements = [];
 
     private QualityModel? SelectedQuality =>
@@ -273,7 +279,8 @@
         deleteError = null;
         try
         {
-            CareerManager.AddQuality(Session, qualityCatalog, addName);
+            CareerManager.AddQuality(Session, qualityCatalog, addName, text: addText);
+            addText = string.Empty;
             addName = string.Empty;
         }
         catch (InvalidOperationException ex)

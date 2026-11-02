@@ -358,6 +358,8 @@ public sealed class CareerTests
           <quality><name>Bad Luck</name><bp>-10</bp><category>Negative</category><bonus /><source>SR4</source><page>2</page></quality>
           <quality><name>Elf Only</name><bp>5</bp><category>Positive</category><bonus /><required><oneof><metatype>Elf</metatype></oneof></required><source>SR4</source><page>3</page></quality>
           <quality><name>Not Lucky</name><bp>5</bp><category>Positive</category><bonus /><forbidden><oneof><quality>Lucky</quality></oneof></forbidden><source>SR4</source><page>4</page></quality>
+          <quality><name>Phobia</name><bp>-5</bp><category>Negative</category><bonus><selecttext /></bonus><source>SR4</source><page>6</page></quality>
+          <quality><name>Skilled</name><bp>5</bp><category>Positive</category><bonus><specificskill><name>Pistols</name><bonus>1</bonus></specificskill></bonus><source>SR4</source><page>7</page></quality>
           <quality><name>Bonus</name><bp>5</bp><category>Positive</category><bonus><MAG>1</MAG></bonus><source>SR4</source><page>5</page></quality>
         </qualities></chummer>
         """;
@@ -415,5 +417,37 @@ public sealed class CareerTests
         Assert.True(catalog.Entries.Count() > 400);
         var addable = catalog.Entries.Where(e => catalog.GetAddBlocker(session, e) is null).ToList();
         Assert.NotEmpty(addable);
-        Assert.All(addable, e => Assert.False(e.Element.Element("bonus")!.HasElements));
+        Assert.True(addable.Count > 200, $"addable {addable.Count}");
+        Assert.Contains(addable, e => e.Element.Element("bonus")!.HasElements);
+        foreach (var e in addable)
+        {
+            var fresh = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Metahuman</metatypecategory><expenses /></character>"));
+            var log = CareerManager.AddQuality(fresh, catalog, e.Name, text: "Test");
+            Assert.True(CareerManager.UndoExpense(fresh, log.Guid), e.Name);
+            Assert.Empty(new ChummerGen.Domain.Character.Qualities.QualitiesManager(fresh).GetAllImprovements());
+        }
+    }
+    [Fact]
+    public void AddQuality_AppliesBonusImprovementsWithTextAndUndoRemovesThem()
+    {
+        var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>30</karma><nuyen>0</nuyen><metatype>Human</metatype><expenses /></character>"));
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(QualityCatalogXml);
+        var manager = new ChummerGen.Domain.Character.Qualities.QualitiesManager(session);
+
+        Assert.Throws<InvalidOperationException>(() => CareerManager.AddQuality(session, catalog, "Phobia"));
+        Assert.Empty(manager.GetAllQualities());
+
+        var phobia = CareerManager.AddQuality(session, catalog, "Phobia", text: "Spiders");
+        var skilled = CareerManager.AddQuality(session, catalog, "Skilled");
+
+        var qualities = manager.GetAllQualities();
+        Assert.Equal("Phobia (Spiders)", qualities.Single(q => q.Name == "Phobia").DisplayName);
+        var improvements = manager.GetQualityImprovements();
+        Assert.Contains(improvements, i => i.ImprovementType == "Text" && i.ImprovedName == "Spiders");
+        Assert.Contains(improvements, i => i.ImprovementType == "SkillBonus" || i.ImprovedName == "Pistols");
+
+        Assert.True(CareerManager.UndoExpense(session, phobia.Guid));
+        Assert.True(CareerManager.UndoExpense(session, skilled.Guid));
+        Assert.Empty(manager.GetAllQualities());
+        Assert.Empty(manager.GetAllImprovements());
     }}
