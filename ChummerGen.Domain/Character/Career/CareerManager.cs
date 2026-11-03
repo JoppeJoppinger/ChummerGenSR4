@@ -468,7 +468,7 @@ public static class CareerManager
     }
 
     // Legacy: positive Qualität kostet BP * Karma-Faktor, negative wird ohne Karma gebucht (Betrag 0).
-    public static ExpenseLogEntry AddQuality(CharacterSession session, Qualities.QualityCatalog catalog, string name, DateTime? date = null, string? text = null)
+    public static ExpenseLogEntry AddQuality(CharacterSession session, Qualities.QualityCatalog catalog, string name, DateTime? date = null, string? text = null, string? selection = null)
     {
         var blocker = GetQualityAddBlocker(session, catalog, name);
         if (blocker is not null)
@@ -485,13 +485,13 @@ public static class CareerManager
         }
 
         var guids = new List<string>();
-        var element = BuildQualityElement(session, catalog, entry, text, guids, 0);
+        var element = BuildQualityElement(session, catalog, entry, text, selection, guids, 0);
         foreach (var child in entry.Element.Element("addqualities")?.Elements("addquality") ?? [])
         {
             var childEntry = catalog.Find(child.Value.Trim())!;
             if (qualities.Elements("quality").Any(q => q.Element("name")?.Value == childEntry.Name && (q.Element("extra")?.Value ?? string.Empty).Length == 0))
                 continue;
-            qualities.Add(BuildQualityElement(session, catalog, childEntry, null, guids, 1));
+            qualities.Add(BuildQualityElement(session, catalog, childEntry, null, null, guids, 1));
         }
 
         var guid = string.Join(",", guids);
@@ -505,12 +505,18 @@ public static class CareerManager
     }
 
     // Legacy addqualities: Folgequalitäten ohne Kosten, Waffen über weaponguid verknüpft.
-    private static XElement BuildQualityElement(CharacterSession session, Qualities.QualityCatalog catalog, Qualities.QualityCatalogEntry entry, string? text, List<string> guids, int depth)
+    private static XElement BuildQualityElement(CharacterSession session, Qualities.QualityCatalog catalog, Qualities.QualityCatalogEntry entry, string? text, string? selection, List<string> guids, int depth)
     {
         var element = catalog.CreateElement(entry);
         var guid = element.Element("guid")!.Value;
         guids.Add(guid);
-        if (entry.Element.Element("bonus") is { HasElements: true } bonus)
+        if (catalog.RequiresSkillSelection(entry))
+        {
+            if (!catalog.TryApplySkillSelection(session, guid, entry, selection ?? string.Empty)
+                || !catalog.TryApplyRemainingBonus(session, guid, entry, text))
+                throw new InvalidOperationException("Bitte eine gültige Fertigkeit auswählen.");
+        }
+        else if (entry.Element.Element("bonus") is { HasElements: true } bonus)
         {
             if (!Cyberware.CyberwareManager.TryApplyExternalBonus(session, guid, "Quality", bonus, text))
                 throw new InvalidOperationException("Der Bonus der Qualität benötigt eine gültige Eingabe.");

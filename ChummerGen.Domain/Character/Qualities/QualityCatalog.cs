@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using ChummerGen.Domain.Abstractions;
+using ChummerGen.Domain.Character.AttributesSkills;
 using ChummerGen.Domain.Character.Cyberware;
 
 namespace ChummerGen.Domain.Character.Qualities;
@@ -123,8 +124,25 @@ public sealed class QualityCatalog
     public string? GetSupportBlocker(QualityCatalogEntry entry, int depth)
     {
         var el = entry.Element;
-        if (el.Element("bonus") is { HasElements: true } bonus && !CyberwareManager.TryParseExternalBonus(bonus, out _))
-            return "Qualität mit diesem Bonus wird noch nicht unterstützt.";
+        if (el.Element("bonus") is { HasElements: true } bonus)
+        {
+            var selection = bonus.Element("selectskill");
+            if (selection is not null)
+            {
+                var remainingBonus = new XElement("bonus", bonus.Attributes(), bonus.Elements().Where(e => e != selection));
+                if (selection.Attributes().Any(a => a.Name.LocalName != "skillgroup")
+                    || selection.Elements().Any(e => e.Name.LocalName is not ("val" or "max" or "applytorating"))
+                    || selection.Elements().Any(e => e.HasAttributes || e.HasElements)
+                    || selection.Elements("val").Count() + selection.Elements("max").Count() != 1
+                    || selection.Elements("applytorating").Any(e => e.Value is not ("yes" or "no"))
+                    || selection.Elements().Any(e => e.Name.LocalName != "applytorating" && !CyberwareManager.TryEvaluateExternalSelectionValue(e.Value, out _))
+                    || !string.IsNullOrEmpty(selection.Attribute("skillgroup")?.Value) && !selection.Attribute("skillgroup")!.Value.All(c => char.IsLetterOrDigit(c) || c is ' ' or '-' or '\'')
+                    || remainingBonus.HasElements && !CyberwareManager.TryParseExternalBonus(remainingBonus, out _))
+                    return "Diese Fertigkeitsauswahl wird noch nicht unterstützt.";
+            }
+            else if (!CyberwareManager.TryParseExternalBonus(bonus, out _))
+                return "Qualität mit diesem Bonus wird noch nicht unterstützt.";
+        }
         if (el.Element("powers") is not null)
             return "Qualität mit Zusatzelementen wird noch nicht unterstützt.";
         if (CyberwareWeaponFactory.GetBlocker(_weapons, el, "Quality") is { } weaponBlocker)
@@ -139,8 +157,8 @@ public sealed class QualityCatalog
                     return "Zusatzqualität fehlt im Katalog.";
                 if (GetSupportBlocker(target, depth + 1) is { } nested)
                     return nested;
-                if (RequiresText(target))
-                    return "Zusatzqualität mit Texteingabe wird noch nicht unterstützt.";
+                if (RequiresText(target) || RequiresSkillSelection(target))
+                    return "Zusatzqualität mit Eingabeauswahl wird noch nicht unterstützt.";
             }
         }
 
@@ -173,4 +191,70 @@ public sealed class QualityCatalog
 
     public bool RequiresText(QualityCatalogEntry entry) =>
         entry.Element.Element("bonus") is { } b && Cyberware.CyberwareManager.TryParseExternalBonus(b, out var text) && text;
+
+    public bool RequiresSkillSelection(QualityCatalogEntry entry) =>
+        entry.Element.Element("bonus")?.Element("selectskill") is not null;
+
+    public IReadOnlyList<string> GetSkillChoices(CharacterSession session, QualityCatalogEntry entry)
+    {
+        var selection = entry.Element.Element("bonus")?.Element("selectskill");
+        if (selection is null)
+            return [];
+        var group = selection.Attribute("skillgroup")?.Value;
+        return new AttributesSkillsManager(session).GetSkills()
+            .Where(s => string.IsNullOrEmpty(group) || string.Equals(s.SkillGroup, group, StringComparison.Ordinal))
+            .Select(s => s.Name)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    public bool TryApplySkillSelection(CharacterSession session, string sourceGuid, QualityCatalogEntry entry, string selection)
+    {
+        var bonus = entry.Element.Element("bonus");
+        var select = bonus?.Element("selectskill");
+        if (select is null || !GetSkillChoices(session, entry).Contains(selection, StringComparer.Ordinal))
+            return false;
+
+        var modifier = select.Element("val") ?? select.Element("max");
+        if (modifier is null || !CyberwareManager.TryEvaluateExternalSelectionValue(modifier.Value, out var value))
+            return false;
+
+        var improvements = session.Xml.Root?.Element("improvements");
+        if (improvements is null)
+        {
+            improvements = new XElement("improvements");
+            session.Xml.Root!.Add(improvements);
+        }
+        var isValue = select.Element("val") is not null;
+        improvements.Add(new XElement("improvement",
+            new XElement("unique", bonus!.Attribute("unique")?.Value ?? string.Empty),
+            new XElement("improvedname", selection),
+            new XElement("sourcename", sourceGuid),
+            new XElement("min", "0"),
+            new XElement("max", isValue ? "0" : value.ToString(CultureInfo.InvariantCulture)),
+            new XElement("aug", "0"),
+            new XElement("augmax", "0"),
+            new XElement("val", isValue ? value.ToString(CultureInfo.InvariantCulture) : "0"),
+            new XElement("rating", "1"),
+            new XElement("exclude"),
+            new XElement("improvementttype", "Skill"),
+            new XElement("improvementsource", "Quality"),
+            new XElement("custom", "False"),
+            new XElement("customname"),
+            new XElement("customid"),
+            new XElement("customgroup"),
+            new XElement("addtorating", string.Equals(select.Element("applytorating")?.Value, "yes", StringComparison.OrdinalIgnoreCase) ? "True" : "False")));
+        return true;
+    }
+
+    public bool TryApplyRemainingBonus(CharacterSession session, string sourceGuid, QualityCatalogEntry entry, string? text)
+    {
+        var bonus = entry.Element.Element("bonus");
+        var select = bonus?.Element("selectskill");
+        if (bonus is null || select is null)
+            return false;
+        var remaining = new XElement("bonus", bonus.Attributes(), bonus.Elements().Where(e => e != select));
+        return !remaining.HasElements || CyberwareManager.TryApplyExternalBonus(session, sourceGuid, "Quality", remaining, text);
+    }
 }

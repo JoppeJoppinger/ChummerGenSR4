@@ -98,6 +98,9 @@ public sealed partial class CyberwareManager
         return true;
     }
 
+    internal static bool TryEvaluateExternalSelectionValue(string text, out int value) =>
+        TryEvaluateSimpleBonusValue(text, 1, out value);
+
     internal static bool TryApplyExternalBonus(CharacterSession session, string sourceGuid, string improvementSource, XElement bonus, string? text)
     {
         if (!TryParseExternalBonus(bonus, out var requiresText)

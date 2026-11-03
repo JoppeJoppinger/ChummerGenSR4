@@ -446,7 +446,7 @@ public sealed class CareerTests
         var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Metahuman</metatypecategory><expenses /></character>"));
 
         Assert.True(catalog.Entries.Count() > 400);
-        var addable = catalog.Entries.Where(e => catalog.GetAddBlocker(session, e) is null).ToList();
+        var addable = catalog.Entries.Where(e => catalog.GetAddBlocker(session, e) is null && !catalog.RequiresSkillSelection(e)).ToList();
         Assert.NotEmpty(addable);
         Assert.True(addable.Count > 200, $"addable {addable.Count}");
         Assert.Contains(addable, e => e.Element.Element("bonus")!.HasElements);
@@ -460,7 +460,62 @@ public sealed class CareerTests
             Assert.Empty(fresh.Xml.Root!.Element("weapons")?.Elements("weapon") ?? []);
             Assert.Empty(fresh.Xml.Root!.Element("qualities")?.Elements("quality") ?? []);
         }
+
     }
+
+    [Fact]
+    public void AddQuality_RealCatalogSkillSelectionsApplyFilteredImprovementsAndUndo()
+    {
+        string? data = null;
+        for (var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory); dir is not null && data is null; dir = dir.Parent)
+        {
+            var candidate = System.IO.Path.Combine(dir.FullName, "bin", "data");
+            if (System.IO.Directory.Exists(candidate))
+                data = candidate;
+        }
+        if (data is null || !System.IO.File.Exists(System.IO.Path.Combine(data, "qualities.xml")))
+            return;
+
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(System.IO.File.ReadAllText(System.IO.Path.Combine(data, "qualities.xml")));
+        var session = new CharacterSession(ChumSerializer.Parse("""
+            <character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Metahuman</metatypecategory>
+              <skills>
+                <skill><name>Etiquette</name><skillgroup>Influence</skillgroup><skillcategory>Social Active</skillcategory><rating>1</rating><default>True</default></skill>
+                <skill><name>Automotive Mechanic</name><skillgroup>Mechanic</skillgroup><skillcategory>Technical Active</skillcategory><rating>1</rating><default>True</default></skill>
+              </skills><expenses />
+            </character>
+            """));
+
+        var aptitude = catalog.Find("Aptitude")!;
+        var trustworthy = catalog.Find("Trustworthy (1 Skill)")!;
+        Assert.Contains("Automotive Mechanic", catalog.GetSkillChoices(session, aptitude));
+        Assert.DoesNotContain("Automotive Mechanic", catalog.GetSkillChoices(session, trustworthy));
+        Assert.Contains("Etiquette", catalog.GetSkillChoices(session, trustworthy));
+
+        var expense = CareerManager.AddQuality(session, catalog, trustworthy.Name, selection: "Etiquette");
+        var quality = session.Xml.Root!.Element("qualities")!.Elements("quality").Single();
+        var improvement = session.Xml.Root!.Element("improvements")!.Elements("improvement").Single();
+        Assert.Equal(quality.Element("guid")!.Value, improvement.Element("sourcename")!.Value);
+        Assert.Equal("Etiquette", improvement.Element("improvedname")!.Value);
+        Assert.Equal("1", improvement.Element("val")!.Value);
+        Assert.Equal("True", improvement.Element("addtorating")!.Value);
+        Assert.True(CareerManager.UndoExpense(session, expense.Guid));
+        Assert.Empty(session.Xml.Root!.Element("improvements")!.Elements("improvement"));
+
+        var aptitudeExpense = CareerManager.AddQuality(session, catalog, aptitude.Name, selection: "Automotive Mechanic");
+        improvement = session.Xml.Root!.Element("improvements")!.Elements("improvement").Single();
+        Assert.Equal("1", improvement.Element("max")!.Value);
+        Assert.True(CareerManager.UndoExpense(session, aptitudeExpense.Guid));
+
+        var incompetent = catalog.Find("Incompetent")!;
+        var incompetentExpense = CareerManager.AddQuality(session, catalog, incompetent.Name, selection: "Etiquette");
+        improvement = session.Xml.Root!.Element("improvements")!.Elements("improvement")
+            .Single(i => i.Element("improvementttype")?.Value == "Skill");
+        Assert.Equal("-6", improvement.Element("max")!.Value);
+        Assert.True(CareerManager.UndoExpense(session, incompetentExpense.Guid));
+        Assert.Throws<InvalidOperationException>(() => CareerManager.AddQuality(session, catalog, aptitude.Name));
+    }
+
     [Fact]
     public void AddQuality_RealCatalogWeaponQualityAddsLinkedWeaponAndUndoRemovesIt()
     {
