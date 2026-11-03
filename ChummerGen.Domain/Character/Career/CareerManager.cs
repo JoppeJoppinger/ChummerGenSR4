@@ -409,7 +409,7 @@ public static class CareerManager
         return q;
     }
 
-    // Legacy: positive Qualitäten kostenlos entfernen, negative per Karma freikaufen (nicht rücknehmbar).
+    // Legacy: positive Qualitäten kostenlos entfernen, negative per Karma freikaufen.
     public static ExpenseLogEntry? RemoveQuality(CharacterSession session, string qualityGuid, DateTime? date = null)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -418,19 +418,37 @@ public static class CareerManager
         if (cost > GetKarma(session))
             throw new InvalidOperationException("Nicht genügend Karma.");
 
-        ExpenseLogEntry? entry = null;
-        if (q.Category == Qualities.QualityCategory.Negative)
-            entry = new ExpenseLogEntry(Guid.NewGuid(), date ?? DateTime.Now, -cost,
-                $"Negative Qualität entfernt {q.DisplayName}", ExpenseType.Karma, false,
-                new ExpenseUndo(KarmaExpenseType.RemoveQuality, NuyenExpenseType.AddCyberware, q.Name, 0, q.Extra ?? string.Empty));
+        var root = session.Xml.Root!;
+        var quality = root.Element("qualities")!.Elements("quality")
+            .First(e => string.Equals(e.Element("guid")?.Value, q.Guid, StringComparison.OrdinalIgnoreCase));
+        var restore = new XElement("restore", new XElement(quality));
+        var improvements = root.Element("improvements")?.Elements("improvement")
+            .Where(e => string.Equals(e.Element("sourcename")?.Value, q.Guid, StringComparison.OrdinalIgnoreCase))
+            .ToList() ?? [];
+        if (improvements.Count > 0)
+            restore.Add(new XElement("improvements", improvements.Select(e => new XElement(e))));
+        var flags = new[] { "blackmarket", "uneducated", "uncouth", "infirm" }
+            .Select(name => root.Element(name))
+            .Where(e => e is not null)
+            .Select(e => new XElement(e!))
+            .ToList();
+        if (flags.Count > 0)
+            restore.Add(new XElement("flags", flags));
+        if (quality.Element("weaponguid")?.Value is { Length: > 0 } weaponGuid
+            && root.Element("weapons")?.Elements("weapon").FirstOrDefault(e =>
+                string.Equals(e.Element("guid")?.Value, weaponGuid, StringComparison.OrdinalIgnoreCase)) is { } weapon)
+            restore.Add(new XElement("weapon", new XElement(weapon)));
+
+        var payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(restore.ToString(SaveOptions.DisableFormatting)));
+        var entry = new ExpenseLogEntry(Guid.NewGuid(), date ?? DateTime.Now, -cost,
+            $"{(q.Category == Qualities.QualityCategory.Negative ? "Negative" : "Positive")} Qualität entfernt {q.DisplayName}",
+            ExpenseType.Karma, false,
+            new ExpenseUndo(KarmaExpenseType.RemoveQuality, NuyenExpenseType.AddCyberware, "restore:" + payload));
 
         if (!new Qualities.QualitiesManager(session).DeleteQuality(q.Guid))
             throw new InvalidOperationException("Qualität konnte nicht entfernt werden.");
-        if (entry is not null)
-        {
-            session.Model.Karma = GetKarma(session) - cost;
-            AddRawExpense(session, entry);
-        }
+        session.Model.Karma = GetKarma(session) - cost;
+        AddRawExpense(session, entry);
         return entry;
     }
 
@@ -523,6 +541,78 @@ public static class CareerManager
     private static bool IsQualityAdd(ExpenseLogEntry entry) =>
         entry.Type == ExpenseType.Karma && entry.Undo is { KarmaType: KarmaExpenseType.AddQuality, ObjectId.Length: > 0 };
 
+    private static bool IsQualityRemoval(ExpenseLogEntry entry) =>
+        entry.Type == ExpenseType.Karma && entry.Undo is { KarmaType: KarmaExpenseType.RemoveQuality, ObjectId: var id }
+        && id.StartsWith("restore:", StringComparison.Ordinal);
+
+    private static bool TryRestoreRemovedQuality(CharacterSession session, string payload)
+    {
+        XElement restore;
+        try
+        {
+            var xml = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            restore = XElement.Parse(xml);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        catch (System.Xml.XmlException)
+        {
+            return false;
+        }
+
+        var quality = restore.Element("quality");
+        var guid = quality?.Element("guid")?.Value;
+        var root = session.Xml.Root;
+        if (quality is null || string.IsNullOrWhiteSpace(guid) || root is null
+            || root.Element("qualities")?.Elements("quality").Any(e =>
+                string.Equals(e.Element("guid")?.Value, guid, StringComparison.OrdinalIgnoreCase)) == true)
+            return false;
+
+        var qualities = root.Element("qualities");
+        if (qualities is null)
+        {
+            qualities = new XElement("qualities");
+            root.Add(qualities);
+        }
+        qualities.Add(new XElement(quality));
+
+        var improvements = restore.Element("improvements")?.Elements("improvement") ?? [];
+        if (improvements.Any())
+        {
+            var target = root.Element("improvements");
+            if (target is null)
+            {
+                target = new XElement("improvements");
+                root.Add(target);
+            }
+            target.Add(improvements.Select(e => new XElement(e)));
+        }
+
+        if (restore.Element("weapon")?.Element("weapon") is { } weapon)
+        {
+            var target = root.Element("weapons");
+            if (target is null)
+            {
+                target = new XElement("weapons");
+                root.Add(target);
+            }
+            target.Add(new XElement(weapon));
+        }
+
+        foreach (var flag in restore.Element("flags")?.Elements() ?? [])
+        {
+            var existing = root.Element(flag.Name);
+            if (existing is null)
+                root.Add(new XElement(flag));
+            else
+                existing.Value = flag.Value;
+        }
+        Cyberware.CyberwareManager.RefreshExternalFlags(session);
+        return true;
+    }
+
     public static bool UndoExpense(CharacterSession session, Guid expenseGuid)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -537,7 +627,10 @@ public static class CareerManager
             return false;
 
         var entry = ParseExpenseElement(target);
-        if (entry is null || !(IsManualEntry(entry) || IsAttributeImprovement(entry) || IsSkillImprovement(entry) || IsQualityAdd(entry)))
+        if (entry is null || !(IsManualEntry(entry) || IsAttributeImprovement(entry) || IsSkillImprovement(entry) || IsQualityAdd(entry) || IsQualityRemoval(entry)))
+            return false;
+
+        if (IsQualityRemoval(entry) && !TryRestoreRemovedQuality(session, entry.Undo!.ObjectId["restore:".Length..]))
             return false;
 
         if (IsQualityAdd(entry))

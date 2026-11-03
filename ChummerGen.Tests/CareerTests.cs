@@ -337,7 +337,9 @@ public sealed class CareerTests
         Assert.Equal(10, CareerManager.GetKarma(session));
         Assert.Equal(KarmaExpenseType.RemoveQuality, entry.Undo!.KarmaType);
         Assert.DoesNotContain(new ChummerGen.Domain.Character.Qualities.QualitiesManager(session).GetAllQualities(), q => q.Guid == "g-neg");
-        Assert.False(CareerManager.UndoExpense(session, entry.Guid));
+        Assert.True(CareerManager.UndoExpense(session, entry.Guid));
+        Assert.Equal(30, CareerManager.GetKarma(session));
+        Assert.Contains(new ChummerGen.Domain.Character.Qualities.QualitiesManager(session).GetAllQualities(), q => q.Guid == "g-neg");
     }
 
     [Fact]
@@ -345,12 +347,40 @@ public sealed class CareerTests
     {
         var session = QualitySession(5);
 
-        Assert.Null(CareerManager.RemoveQuality(session, "g-pos"));
+        var entry = CareerManager.RemoveQuality(session, "g-pos");
+        Assert.NotNull(entry);
         Assert.Equal(5, CareerManager.GetKarma(session));
-        Assert.Empty(CareerManager.GetExpenses(session));
+        Assert.Equal(0, entry!.Amount);
+        Assert.True(CareerManager.UndoExpense(session, entry.Guid));
+        Assert.Contains(new ChummerGen.Domain.Character.Qualities.QualitiesManager(session).GetAllQualities(), q => q.Guid == "g-pos");
         Assert.Throws<InvalidOperationException>(() => CareerManager.RemoveQuality(session, "g-neg"));
         Assert.Throws<InvalidOperationException>(() => CareerManager.RemoveQuality(session, "g-meta"));
-        Assert.Equal(2, new ChummerGen.Domain.Character.Qualities.QualitiesManager(session).GetAllQualities().Count);
+        Assert.Equal(3, new ChummerGen.Domain.Character.Qualities.QualitiesManager(session).GetAllQualities().Count);
+    }
+
+    [Fact]
+    public void RemoveQuality_UndoRestoresLinkedImprovementsAndWeapon()
+    {
+        var session = new CharacterSession(ChumSerializer.Parse("""
+            <character>
+              <created>True</created><karma>30</karma><nuyen>0</nuyen>
+              <qualities><quality><guid>g-neg</guid><name>Bad Luck</name><bp>-10</bp><qualitytype>Negative</qualitytype><qualitysource>Selected</qualitysource><weaponguid>w-1</weaponguid></quality></qualities>
+              <uneducated>True</uneducated>
+              <improvements><improvement><sourcename>g-neg</sourcename><improvementttype>Uneducated</improvementttype><improvedname>uneducated</improvedname></improvement></improvements>
+              <weapons><weapon><guid>w-1</guid><name>Quality Weapon</name></weapon></weapons>
+              <expenses />
+            </character>
+            """));
+
+        var expense = CareerManager.RemoveQuality(session, "g-neg")!;
+        session = new CharacterSession(ChumSerializer.Parse(session.Serialize()));
+        Assert.Empty(session.Xml.Root!.Element("improvements")!.Elements("improvement"));
+        Assert.Empty(session.Xml.Root!.Element("weapons")!.Elements("weapon"));
+
+        Assert.True(CareerManager.UndoExpense(session, expense.Guid));
+        Assert.Equal("uneducated", session.Xml.Root!.Element("improvements")!.Element("improvement")!.Element("improvedname")!.Value);
+        Assert.Equal("w-1", session.Xml.Root!.Element("weapons")!.Element("weapon")!.Element("guid")!.Value);
+        Assert.Equal("True", session.Xml.Root!.Element("uneducated")!.Value);
     }
     private const string QualityCatalogXml = """
         <chummer><qualities>
