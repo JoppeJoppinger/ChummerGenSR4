@@ -30,17 +30,17 @@
                 {
                     <input id="quality-add-text" class="form-control form-control-sm" placeholder="Text" @bind="addText" @bind:event="oninput" />
                 }
-                @if (AddNeedsSkillSelection)
+                @if (AddNeedsSelection)
                 {
-                    <select id="quality-add-skill" class="form-select form-select-sm" @bind="addSelection">
-                        <option value="">— Fertigkeit —</option>
-                        @foreach (var skill in SkillChoices)
+                    <select id="quality-add-selection" class="form-select form-select-sm" @bind="addSelection">
+                        <option value="">— Auswahl —</option>
+                        @foreach (var choice in SelectionChoices)
                         {
-                            <option value="@skill">@skill</option>
+                            <option value="@choice">@choice</option>
                         }
                     </select>
                 }
-                <button type="button" id="quality-add" class="btn btn-sm btn-outline-primary" disabled="@(addName.Length == 0 || (AddNeedsText && string.IsNullOrWhiteSpace(addText)) || (AddNeedsSkillSelection && string.IsNullOrWhiteSpace(addSelection)))" @onclick="AddQuality">+</button>
+                <button type="button" id="quality-add" class="btn btn-sm btn-outline-primary" disabled="@(addName.Length == 0 || (AddNeedsText && string.IsNullOrWhiteSpace(addText)) || (AddNeedsSelection && string.IsNullOrWhiteSpace(addSelection)))" @onclick="AddQuality">+</button>
             </div>
         }
 
@@ -228,7 +228,11 @@
     private string addSelection = string.Empty;
     private bool AddNeedsText => addable.FirstOrDefault(e => e.Name == addName) is { } sel && qualityCatalog.RequiresText(sel);
     private bool AddNeedsSkillSelection => addable.FirstOrDefault(e => e.Name == addName) is { } sel && qualityCatalog.RequiresSkillSelection(sel);
-    private IReadOnlyList<string> SkillChoices => addable.FirstOrDefault(e => e.Name == addName) is { } sel ? qualityCatalog.GetSkillChoices(Session, sel) : [];
+    private bool AddNeedsAttributeSelection => addable.FirstOrDefault(e => e.Name == addName) is { } sel && qualityCatalog.RequiresAttributeSelection(sel);
+    private bool AddNeedsSelection => AddNeedsSkillSelection || AddNeedsAttributeSelection;
+    private IReadOnlyList<string> SelectionChoices => addable.FirstOrDefault(e => e.Name == addName) is { } sel
+        ? AddNeedsAttributeSelection ? qualityCatalog.GetAttributeChoices(sel) : qualityCatalog.GetSkillChoices(Session, sel)
+        : [];
     private IReadOnlyList<ImprovementModel> linkedImprovements = [];
 
     private QualityModel? SelectedQuality =>
@@ -280,7 +284,7 @@
             : [];
         if (!addable.Any(e => e.Name == addName))
             addName = string.Empty;
-        if (!SkillChoices.Contains(addSelection, StringComparer.Ordinal))
+        if (!SelectionChoices.Contains(addSelection, StringComparer.Ordinal))
             addSelection = string.Empty;
 
         if (selectedGuid is not null && SelectedQuality is null)

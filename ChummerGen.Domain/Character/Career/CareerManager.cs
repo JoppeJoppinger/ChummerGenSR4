@@ -516,6 +516,12 @@ public static class CareerManager
                 || !catalog.TryApplyRemainingBonus(session, guid, entry, text))
                 throw new InvalidOperationException("Bitte eine gültige Fertigkeit auswählen.");
         }
+        else if (catalog.RequiresAttributeSelection(entry))
+        {
+            if (!catalog.TryApplyAttributeSelection(session, guid, entry, selection ?? string.Empty)
+                || !catalog.TryApplyRemainingBonus(session, guid, entry, text))
+                throw new InvalidOperationException("Bitte ein gültiges Attribut auswählen.");
+        }
         else if (entry.Element.Element("bonus") is { HasElements: true } bonus)
         {
             if (!Cyberware.CyberwareManager.TryApplyExternalBonus(session, guid, "Quality", bonus, text))

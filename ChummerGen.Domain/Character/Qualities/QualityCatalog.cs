@@ -127,18 +127,33 @@ public sealed class QualityCatalog
         if (el.Element("bonus") is { HasElements: true } bonus)
         {
             var selection = bonus.Element("selectskill");
-            if (selection is not null)
+            var attributeSelection = bonus.Element("selectattribute");
+            if (selection is not null || attributeSelection is not null)
             {
-                var remainingBonus = new XElement("bonus", bonus.Attributes(), bonus.Elements().Where(e => e != selection));
-                if (selection.Attributes().Any(a => a.Name.LocalName != "skillgroup")
-                    || selection.Elements().Any(e => e.Name.LocalName is not ("val" or "max" or "applytorating"))
-                    || selection.Elements().Any(e => e.HasAttributes || e.HasElements)
-                    || selection.Elements("val").Count() + selection.Elements("max").Count() != 1
-                    || selection.Elements("applytorating").Any(e => e.Value is not ("yes" or "no"))
-                    || selection.Elements().Any(e => e.Name.LocalName != "applytorating" && !CyberwareManager.TryEvaluateExternalSelectionValue(e.Value, out _))
-                    || !string.IsNullOrEmpty(selection.Attribute("skillgroup")?.Value) && !selection.Attribute("skillgroup")!.Value.All(c => char.IsLetterOrDigit(c) || c is ' ' or '-' or '\'')
+                if (selection is not null && attributeSelection is not null)
+                    return "Kombinierte Fertigkeits- und Attributauswahl wird noch nicht unterstützt.";
+                var selectedNode = selection ?? attributeSelection!;
+                var remainingBonus = new XElement("bonus", bonus.Attributes(), bonus.Elements().Where(e => e != selectedNode));
+                var invalidSelection = selection is not null
+                    ? selection.Attributes().Any(a => a.Name.LocalName != "skillgroup")
+                        || selection.Elements().Any(e => e.Name.LocalName is not ("val" or "max" or "applytorating"))
+                        || selection.Elements().Any(e => e.HasAttributes || e.HasElements)
+                        || selection.Elements("val").Count() + selection.Elements("max").Count() != 1
+                        || selection.Elements("applytorating").Any(e => e.Value is not ("yes" or "no"))
+                        || selection.Elements().Any(e => e.Name.LocalName != "applytorating" && !CyberwareManager.TryEvaluateExternalSelectionValue(e.Value, out _))
+                        || !string.IsNullOrEmpty(selection.Attribute("skillgroup")?.Value) && !selection.Attribute("skillgroup")!.Value.All(c => char.IsLetterOrDigit(c) || c is ' ' or '-' or '\'')
+                    : attributeSelection!.Attributes().Any()
+                        || attributeSelection.Elements().Any(e => e.Name.LocalName is not ("attribute" or "excludeattribute" or "min" or "max"))
+                        || attributeSelection.Elements().Any(e => e.HasAttributes || e.HasElements)
+                        || attributeSelection.Elements("min").Count() > 1 || attributeSelection.Elements("max").Count() > 1
+                        || attributeSelection.Elements("attribute").Any(e => !KnownAttributes.Contains(e.Value, StringComparer.Ordinal))
+                        || attributeSelection.Elements("excludeattribute").Any(e => !KnownAttributes.Contains(e.Value, StringComparer.Ordinal))
+                        || attributeSelection.Elements().Where(e => e.Name.LocalName is "min" or "max")
+                            .Any(e => !CyberwareManager.TryEvaluateExternalSelectionValue(e.Value, out _))
+                        || attributeSelection.Elements("min").Count() + attributeSelection.Elements("max").Count() == 0;
+                if (invalidSelection
                     || remainingBonus.HasElements && !CyberwareManager.TryParseExternalBonus(remainingBonus, out _))
-                    return "Diese Fertigkeitsauswahl wird noch nicht unterstützt.";
+                    return "Diese Fertigkeits- oder Attributauswahl wird noch nicht unterstützt.";
             }
             else if (!CyberwareManager.TryParseExternalBonus(bonus, out _))
                 return "Qualität mit diesem Bonus wird noch nicht unterstützt.";
@@ -157,7 +172,7 @@ public sealed class QualityCatalog
                     return "Zusatzqualität fehlt im Katalog.";
                 if (GetSupportBlocker(target, depth + 1) is { } nested)
                     return nested;
-                if (RequiresText(target) || RequiresSkillSelection(target))
+                if (RequiresText(target) || RequiresSkillSelection(target) || RequiresAttributeSelection(target))
                     return "Zusatzqualität mit Eingabeauswahl wird noch nicht unterstützt.";
             }
         }
@@ -194,6 +209,26 @@ public sealed class QualityCatalog
 
     public bool RequiresSkillSelection(QualityCatalogEntry entry) =>
         entry.Element.Element("bonus")?.Element("selectskill") is not null;
+
+    private static readonly string[] SelectableAttributes = ["BOD", "AGI", "REA", "STR", "CHA", "INT", "LOG", "WIL", "EDG"];
+    private static readonly string[] KnownAttributes = [.. SelectableAttributes, "MAG", "RES", "ESS"];
+
+    public bool RequiresAttributeSelection(QualityCatalogEntry entry) =>
+        entry.Element.Element("bonus")?.Element("selectattribute") is not null;
+
+    public IReadOnlyList<string> GetAttributeChoices(QualityCatalogEntry entry)
+    {
+        var selection = entry.Element.Element("bonus")?.Element("selectattribute");
+        if (selection is null)
+            return [];
+        var included = selection.Elements("attribute").Select(e => e.Value).ToList();
+        var excluded = selection.Elements("excludeattribute").Select(e => e.Value).ToHashSet(StringComparer.Ordinal);
+        IEnumerable<string> choices = included.Count > 0 ? included : SelectableAttributes;
+        return choices
+            .Where(a => !excluded.Contains(a))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
 
     public IReadOnlyList<string> GetSkillChoices(CharacterSession session, QualityCatalogEntry entry)
     {
@@ -251,10 +286,48 @@ public sealed class QualityCatalog
     public bool TryApplyRemainingBonus(CharacterSession session, string sourceGuid, QualityCatalogEntry entry, string? text)
     {
         var bonus = entry.Element.Element("bonus");
-        var select = bonus?.Element("selectskill");
-        if (bonus is null || select is null)
+        var selectedNode = bonus?.Element("selectskill") ?? bonus?.Element("selectattribute");
+        if (bonus is null || selectedNode is null)
             return false;
-        var remaining = new XElement("bonus", bonus.Attributes(), bonus.Elements().Where(e => e != select));
+        var remaining = new XElement("bonus", bonus.Attributes(), bonus.Elements().Where(e => e != selectedNode));
         return !remaining.HasElements || CyberwareManager.TryApplyExternalBonus(session, sourceGuid, "Quality", remaining, text);
+    }
+
+    public bool TryApplyAttributeSelection(CharacterSession session, string sourceGuid, QualityCatalogEntry entry, string selection)
+    {
+        var bonus = entry.Element.Element("bonus");
+        var select = bonus?.Element("selectattribute");
+        if (select is null || !GetAttributeChoices(entry).Contains(selection, StringComparer.Ordinal))
+            return false;
+
+        var improvements = session.Xml.Root?.Element("improvements");
+        if (improvements is null)
+        {
+            improvements = new XElement("improvements");
+            session.Xml.Root!.Add(improvements);
+        }
+        string Value(string name) =>
+            select.Element(name) is { } node && CyberwareManager.TryEvaluateExternalSelectionValue(node.Value, out var value)
+                ? value.ToString(CultureInfo.InvariantCulture)
+                : "0";
+        improvements.Add(new XElement("improvement",
+            new XElement("unique", bonus!.Attribute("unique")?.Value ?? string.Empty),
+            new XElement("improvedname", selection),
+            new XElement("sourcename", sourceGuid),
+            new XElement("min", Value("min")),
+            new XElement("max", Value("max")),
+            new XElement("aug", "0"),
+            new XElement("augmax", "0"),
+            new XElement("val", "0"),
+            new XElement("rating", "1"),
+            new XElement("exclude"),
+            new XElement("improvementttype", "Attribute"),
+            new XElement("improvementsource", "Quality"),
+            new XElement("custom", "False"),
+            new XElement("customname"),
+            new XElement("customid"),
+            new XElement("customgroup"),
+            new XElement("addtorating", "False")));
+        return true;
     }
 }

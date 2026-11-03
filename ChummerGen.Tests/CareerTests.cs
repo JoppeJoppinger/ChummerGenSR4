@@ -446,7 +446,8 @@ public sealed class CareerTests
         var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Metahuman</metatypecategory><expenses /></character>"));
 
         Assert.True(catalog.Entries.Count() > 400);
-        var addable = catalog.Entries.Where(e => catalog.GetAddBlocker(session, e) is null && !catalog.RequiresSkillSelection(e)).ToList();
+        var addable = catalog.Entries.Where(e => catalog.GetAddBlocker(session, e) is null
+            && !catalog.RequiresSkillSelection(e) && !catalog.RequiresAttributeSelection(e)).ToList();
         Assert.NotEmpty(addable);
         Assert.True(addable.Count > 200, $"addable {addable.Count}");
         Assert.Contains(addable, e => e.Element.Element("bonus")!.HasElements);
@@ -514,6 +515,41 @@ public sealed class CareerTests
         Assert.Equal("-6", improvement.Element("max")!.Value);
         Assert.True(CareerManager.UndoExpense(session, incompetentExpense.Guid));
         Assert.Throws<InvalidOperationException>(() => CareerManager.AddQuality(session, catalog, aptitude.Name));
+    }
+
+    [Fact]
+    public void AddQuality_RealCatalogAttributeSelectionsApplyBoundsAndUndo()
+    {
+        string? data = null;
+        for (var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory); dir is not null && data is null; dir = dir.Parent)
+        {
+            var candidate = System.IO.Path.Combine(dir.FullName, "bin", "data");
+            if (System.IO.Directory.Exists(candidate))
+                data = candidate;
+        }
+        if (data is null || !System.IO.File.Exists(System.IO.Path.Combine(data, "qualities.xml")))
+            return;
+
+        var catalog = ChummerGen.Domain.Character.Qualities.QualityCatalog.FromXml(System.IO.File.ReadAllText(System.IO.Path.Combine(data, "qualities.xml")));
+        var session = new CharacterSession(ChumSerializer.Parse("<character><created>True</created><karma>500</karma><nuyen>0</nuyen><metatype>Human</metatype><metatypecategory>Mutant Critters</metatypecategory><expenses /></character>"));
+        var cases = new[] { ("Exceptional Attribute", "max", "1"), ("Metagenetic Improvement", "min", "1"), ("Impaired Attribute", "max", "-1") };
+
+        Assert.Equal(new[] { "BOD", "AGI", "REA", "STR", "CHA", "INT", "LOG", "WIL" },
+            catalog.GetAttributeChoices(catalog.Find("Exceptional Attribute")!));
+        foreach (var (name, field, value) in cases)
+        {
+            var entry = catalog.Find(name)!;
+            Assert.Null(CareerManager.GetQualityAddBlocker(session, catalog, name));
+            Assert.DoesNotContain("EDG", catalog.GetAttributeChoices(entry));
+            var expense = CareerManager.AddQuality(session, catalog, name, selection: "BOD");
+            var improvement = session.Xml.Root!.Element("improvements")!.Elements("improvement").Single();
+            Assert.Equal("BOD", improvement.Element("improvedname")!.Value);
+            Assert.Equal(value, improvement.Element(field)!.Value);
+            Assert.Equal("Attribute", improvement.Element("improvementttype")!.Value);
+            Assert.True(CareerManager.UndoExpense(session, expense.Guid));
+            Assert.Empty(session.Xml.Root!.Element("improvements")!.Elements("improvement"));
+            Assert.Empty(session.Xml.Root!.Element("qualities")!.Elements("quality"));
+        }
     }
 
     [Fact]
